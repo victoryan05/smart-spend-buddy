@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SpendyLogo } from "@/components/SpendyLogo";
+import { BrandLogo } from "@/components/BrandLogo";
+import { BRANDS, CATALOGUES, type Brand } from "@/lib/spendy-brands";
 import {
   loadCards, saveCards, daysUntil, formatMoney,
   type SpendyCard, type CardKind,
@@ -11,22 +13,24 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "Spendy — Use what you already have" },
       { name: "description", content: "MVP prototype: every gift card, store credit and code in one place. Live balances, expiry nudges, two-tap checkout." },
-      { property: "og:title", content: "Spendy" },
-      { property: "og:description", content: "The easiest way to use what you already have." },
     ],
   }),
   component: Index,
 });
 
+type Tab = "home" | "catalogues" | "wallet" | "more";
+
 type Screen =
-  | { name: "home" }
+  | { name: "tab"; tab: Tab }
   | { name: "detail"; id: string }
-  | { name: "add" }
+  | { name: "pick" }                       // choose-brand list
+  | { name: "scan"; brand: Brand }         // camera viewfinder
+  | { name: "add"; brand?: Brand; code?: string }
   | { name: "expiring" };
 
 function Index() {
   const [cards, setCards] = useState<SpendyCard[]>([]);
-  const [screen, setScreen] = useState<Screen>({ name: "home" });
+  const [screen, setScreen] = useState<Screen>({ name: "tab", tab: "home" });
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
 
   useEffect(() => { setCards(loadCards()); }, []);
@@ -35,9 +39,13 @@ function Index() {
   const update = (next: SpendyCard[] | ((p: SpendyCard[]) => SpendyCard[])) =>
     setCards(typeof next === "function" ? (next as any) : next);
 
+  const currentTab: Tab | null = screen.name === "tab" ? screen.tab : null;
+
+  const goTab = (tab: Tab) => setScreen({ name: "tab", tab });
+  const openAdd = () => setScreen({ name: "pick" });
+
   return (
     <main className="min-h-screen w-full flex flex-col items-center px-4 py-6 md:py-10">
-      {/* Top tagline only on desktop */}
       <header className="hidden md:flex w-full max-w-5xl items-center justify-between mb-8">
         <SpendyLogo />
         <p className="text-sm text-muted-foreground">
@@ -46,50 +54,95 @@ function Index() {
       </header>
 
       <Phone>
-        {screen.name === "home" && (
-          <Home
-            cards={cards}
-            onOpen={(id) => setScreen({ name: "detail", id })}
-            onAdd={() => setScreen({ name: "add" })}
-            onExpiring={() => setScreen({ name: "expiring" })}
-            nudgeDismissed={nudgeDismissed}
-            onDismissNudge={() => setNudgeDismissed(true)}
+        <div className="h-full flex flex-col">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden pb-24">
+            {screen.name === "tab" && screen.tab === "home" && (
+              <Home
+                cards={cards}
+                onOpen={(id) => setScreen({ name: "detail", id })}
+                onAdd={openAdd}
+                onExpiring={() => setScreen({ name: "expiring" })}
+                onCatalogues={() => goTab("catalogues")}
+                nudgeDismissed={nudgeDismissed}
+                onDismissNudge={() => setNudgeDismissed(true)}
+              />
+            )}
+            {screen.name === "tab" && screen.tab === "wallet" && (
+              <Wallet
+                cards={cards}
+                onOpen={(id) => setScreen({ name: "detail", id })}
+                onAdd={openAdd}
+              />
+            )}
+            {screen.name === "tab" && screen.tab === "catalogues" && (
+              <Catalogues />
+            )}
+            {screen.name === "tab" && screen.tab === "more" && <More />}
+
+            {screen.name === "detail" && (() => {
+              const card = cards.find((c) => c.id === screen.id);
+              if (!card) { setScreen({ name: "tab", tab: "home" }); return null; }
+              return (
+                <Detail
+                  card={card}
+                  onBack={() => setScreen({ name: "tab", tab: "wallet" })}
+                  onSpend={(amount) =>
+                    update((cs) => cs.map((c) =>
+                      c.id === card.id
+                        ? { ...c, balance: Math.max(0, +(c.balance - amount).toFixed(2)) }
+                        : c
+                    ))
+                  }
+                  onDelete={() => {
+                    update((cs) => cs.filter((c) => c.id !== card.id));
+                    setScreen({ name: "tab", tab: "wallet" });
+                  }}
+                />
+              );
+            })()}
+
+            {screen.name === "pick" && (
+              <PickBrand
+                onCancel={() => setScreen({ name: "tab", tab: "home" })}
+                onPick={(brand) => setScreen({ name: "scan", brand })}
+                onManual={() => setScreen({ name: "add" })}
+              />
+            )}
+
+            {screen.name === "scan" && (
+              <Scan
+                brand={screen.brand}
+                onCancel={() => setScreen({ name: "pick" })}
+                onScanned={(code) => setScreen({ name: "add", brand: screen.brand, code })}
+                onManual={() => setScreen({ name: "add", brand: screen.brand })}
+              />
+            )}
+
+            {screen.name === "add" && (
+              <AddCard
+                presetBrand={screen.brand}
+                presetCode={screen.code}
+                onCancel={() => setScreen({ name: "pick" })}
+                onSave={(c) => { update((cs) => [c, ...cs]); setScreen({ name: "tab", tab: "wallet" }); }}
+              />
+            )}
+
+            {screen.name === "expiring" && (
+              <Expiring
+                cards={cards}
+                onBack={() => setScreen({ name: "tab", tab: "home" })}
+                onOpen={(id) => setScreen({ name: "detail", id })}
+              />
+            )}
+          </div>
+
+          <BottomNav
+            current={currentTab}
+            onTab={goTab}
+            onAdd={openAdd}
+            hidden={screen.name === "scan"}
           />
-        )}
-        {screen.name === "detail" && (() => {
-          const card = cards.find((c) => c.id === screen.id);
-          if (!card) { setScreen({ name: "home" }); return null; }
-          return (
-            <Detail
-              card={card}
-              onBack={() => setScreen({ name: "home" })}
-              onSpend={(amount) =>
-                update((cs) => cs.map((c) =>
-                  c.id === card.id
-                    ? { ...c, balance: Math.max(0, +(c.balance - amount).toFixed(2)) }
-                    : c
-                ))
-              }
-              onDelete={() => {
-                update((cs) => cs.filter((c) => c.id !== card.id));
-                setScreen({ name: "home" });
-              }}
-            />
-          );
-        })()}
-        {screen.name === "add" && (
-          <AddCard
-            onCancel={() => setScreen({ name: "home" })}
-            onSave={(c) => { update((cs) => [c, ...cs]); setScreen({ name: "home" }); }}
-          />
-        )}
-        {screen.name === "expiring" && (
-          <Expiring
-            cards={cards}
-            onBack={() => setScreen({ name: "home" })}
-            onOpen={(id) => setScreen({ name: "detail", id })}
-          />
-        )}
+        </div>
       </Phone>
 
       <footer className="mt-8 text-xs text-muted-foreground text-center max-w-sm">
@@ -105,9 +158,8 @@ function Phone({ children }: { children: React.ReactNode }) {
     <div className="relative w-full max-w-[400px] aspect-[9/19.5] md:aspect-auto md:h-[820px]">
       <div className="absolute inset-0 rounded-[3rem] bg-black/90 p-[6px] shadow-card">
         <div className="relative h-full w-full rounded-[2.7rem] overflow-hidden bg-background">
-          {/* notch */}
           <div className="absolute left-1/2 -translate-x-1/2 top-2 h-6 w-28 rounded-full bg-black z-30" />
-          <div className="h-full w-full overflow-y-auto overflow-x-hidden pt-10 pb-6">
+          <div className="h-full w-full pt-10">
             {children}
           </div>
         </div>
@@ -116,20 +168,75 @@ function Phone({ children }: { children: React.ReactNode }) {
   );
 }
 
+/* ---------- Bottom nav ---------- */
+function BottomNav({
+  current, onTab, onAdd, hidden,
+}: {
+  current: Tab | null;
+  onTab: (t: Tab) => void;
+  onAdd: () => void;
+  hidden?: boolean;
+}) {
+  if (hidden) return null;
+  const items: { tab: Tab; label: string; icon: React.ReactNode }[] = [
+    { tab: "home", label: "Home", icon: <IconHome /> },
+    { tab: "catalogues", label: "Catalogues", icon: <IconBook /> },
+    { tab: "wallet", label: "Wallet", icon: <IconWallet /> },
+    { tab: "more", label: "More", icon: <IconUser /> },
+  ];
+  return (
+    <div className="absolute left-0 right-0 bottom-0 px-4 pb-3 z-20">
+      <div className="relative mx-auto max-w-[340px] rounded-full bg-card/95 backdrop-blur border border-border shadow-card flex items-center justify-between px-2 py-1.5">
+        {items.slice(0, 2).map((it) => (
+          <NavBtn key={it.tab} active={current === it.tab} onClick={() => onTab(it.tab)} {...it} />
+        ))}
+        <button
+          onClick={onAdd}
+          aria-label="Add card"
+          className="h-12 w-12 -mt-6 rounded-full gradient-peach text-white grid place-items-center shadow-soft active:scale-95 transition border-4 border-background"
+        >
+          <Plus />
+        </button>
+        {items.slice(2).map((it) => (
+          <NavBtn key={it.tab} active={current === it.tab} onClick={() => onTab(it.tab)} {...it} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NavBtn({
+  active, onClick, label, icon,
+}: { active: boolean; onClick: () => void; label: string; icon: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] transition ${
+        active ? "text-coral" : "text-muted-foreground"
+      }`}
+    >
+      <span className="h-5 grid place-items-center">{icon}</span>
+      <span className="font-medium">{label}</span>
+    </button>
+  );
+}
+
 /* ---------- Home ---------- */
 function Home({
-  cards, onOpen, onAdd, onExpiring, nudgeDismissed, onDismissNudge,
+  cards, onOpen, onAdd, onExpiring, onCatalogues, nudgeDismissed, onDismissNudge,
 }: {
   cards: SpendyCard[];
   onOpen: (id: string) => void;
   onAdd: () => void;
   onExpiring: () => void;
+  onCatalogues: () => void;
   nudgeDismissed: boolean;
   onDismissNudge: () => void;
 }) {
   const total = cards.reduce((s, c) => s + c.balance, 0);
   const expiringSoon = cards.filter((c) => daysUntil(c.expiresAt) <= 30 && c.balance > 0);
   const nudgeCard = cards.find((c) => c.brand === "Sephora" && c.balance > 0);
+  const featured = CATALOGUES.slice(0, 4);
 
   return (
     <div className="px-5">
@@ -137,14 +244,12 @@ function Home({
         <SpendyLogo size={24} />
         <button
           onClick={onAdd}
-          className="h-10 w-10 grid place-items-center rounded-full gradient-peach text-white shadow-soft active:scale-95 transition"
-          aria-label="Add card"
+          className="h-9 px-3 rounded-full bg-card border border-border text-xs font-semibold flex items-center gap-1 active:scale-95 transition"
         >
-          <Plus />
+          <Plus /> Add
         </button>
       </div>
 
-      {/* Balance hero */}
       <section className="mt-6 rounded-3xl gradient-peach text-white p-6 shadow-soft relative overflow-hidden">
         <div className="absolute -right-6 -top-6 h-32 w-32 rounded-full bg-white/15 blur-xl" />
         <p className="text-sm/none opacity-90">Hi, Mia — you have</p>
@@ -156,7 +261,6 @@ function Home({
         </p>
       </section>
 
-      {/* Nudge */}
       {!nudgeDismissed && nudgeCard && (
         <button
           onClick={() => onOpen(nudgeCard.id)}
@@ -177,7 +281,6 @@ function Home({
         </button>
       )}
 
-      {/* Expiring strip */}
       {expiringSoon.length > 0 && (
         <button
           onClick={onExpiring}
@@ -191,7 +294,19 @@ function Home({
         </button>
       )}
 
-      {/* Cards */}
+      {/* Catalogues teaser */}
+      <section className="mt-6">
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="font-display text-2xl">Offers</h2>
+          <button onClick={onCatalogues} className="text-xs text-coral font-semibold">See all →</button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {featured.map((c) => (
+            <CatalogueTile key={c.brand} c={c} />
+          ))}
+        </div>
+      </section>
+
       <section className="mt-6">
         <div className="flex items-baseline justify-between mb-3">
           <h2 className="font-display text-2xl">Your cards</h2>
@@ -202,7 +317,7 @@ function Home({
           <EmptyState onAdd={onAdd} />
         ) : (
           <ul className="space-y-3">
-            {cards.map((c) => (
+            {cards.slice(0, 4).map((c) => (
               <li key={c.id}>
                 <CardRow card={c} onClick={() => onOpen(c.id)} />
               </li>
@@ -214,6 +329,118 @@ function Home({
   );
 }
 
+/* ---------- Wallet tab ---------- */
+function Wallet({
+  cards, onOpen, onAdd,
+}: { cards: SpendyCard[]; onOpen: (id: string) => void; onAdd: () => void }) {
+  return (
+    <div className="px-5">
+      <div className="flex items-center justify-between">
+        <h1 className="font-display text-3xl">Wallet</h1>
+        <button
+          onClick={onAdd}
+          className="h-9 px-3 rounded-full bg-card border border-border text-xs font-semibold flex items-center gap-1"
+        >
+          <Plus /> Add
+        </button>
+      </div>
+      <p className="text-sm text-muted-foreground mt-1">
+        {cards.length} card{cards.length === 1 ? "" : "s"} & codes
+      </p>
+
+      {cards.length === 0 ? (
+        <div className="mt-6"><EmptyState onAdd={onAdd} /></div>
+      ) : (
+        <ul className="mt-5 space-y-3">
+          {cards.map((c) => (
+            <li key={c.id}>
+              <CardRow card={c} onClick={() => onOpen(c.id)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Catalogues tab ---------- */
+function Catalogues() {
+  return (
+    <div className="px-5">
+      <h1 className="font-display text-3xl">Catalogues</h1>
+      <p className="text-sm text-muted-foreground mt-1">
+        Weekly offers from our partner brands.
+      </p>
+
+      <div className="mt-5 rounded-2xl border border-dashed border-border bg-card/50 p-4 text-[12px] text-muted-foreground">
+        Spot reserved for partner corporates — brands can publish promotions, catalogues and
+        sponsored placements here.
+      </div>
+
+      <h2 className="font-display text-xl mt-6 mb-3">This week</h2>
+      <div className="grid grid-cols-2 gap-3">
+        {CATALOGUES.map((c) => (
+          <CatalogueTile key={c.brand} c={c} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CatalogueTile({ c }: { c: typeof CATALOGUES[number] }) {
+  return (
+    <button className="text-left rounded-2xl overflow-hidden border border-border bg-card shadow-soft active:scale-[.99] transition">
+      <div
+        className="aspect-square w-full grid place-items-center text-4xl relative"
+        style={{ background: c.gradient }}
+      >
+        <span className="drop-shadow-md">{c.emoji}</span>
+        {c.badge && (
+          <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-white/90 text-[10px] font-semibold text-ink">
+            {c.badge}
+          </span>
+        )}
+        <span className="absolute top-0 right-0 w-8 h-8 bg-white/80"
+              style={{ clipPath: "polygon(100% 0, 0 0, 100% 100%)" }} />
+      </div>
+      <div className="p-2.5">
+        <p className="text-[13px] font-semibold leading-tight truncate">{c.brand}</p>
+        <p className="text-[11px] text-muted-foreground">{c.endsLabel}</p>
+      </div>
+    </button>
+  );
+}
+
+/* ---------- More tab ---------- */
+function More() {
+  const items = [
+    { icon: "🔔", label: "Notifications & nudges" },
+    { icon: "📍", label: "Location reminders" },
+    { icon: "🤝", label: "Partner with Spendy", note: "For corporates" },
+    { icon: "🔒", label: "Privacy" },
+    { icon: "❓", label: "Help & support" },
+  ];
+  return (
+    <div className="px-5">
+      <h1 className="font-display text-3xl">More</h1>
+      <ul className="mt-5 rounded-2xl bg-card border border-border overflow-hidden">
+        {items.map((i, idx) => (
+          <li key={i.label}
+              className={`flex items-center gap-3 px-4 py-3 ${idx ? "border-t border-border" : ""}`}>
+            <span className="text-xl">{i.icon}</span>
+            <div className="flex-1">
+              <p className="text-sm font-medium">{i.label}</p>
+              {i.note && <p className="text-[11px] text-muted-foreground">{i.note}</p>}
+            </div>
+            <span className="text-muted-foreground">›</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/* ---------- Card row ---------- */
 function CardRow({ card, onClick }: { card: SpendyCard; onClick: () => void }) {
   const days = daysUntil(card.expiresAt);
   const empty = card.balance <= 0;
@@ -289,7 +516,6 @@ function Detail({
         </div>
       </div>
 
-      {/* Barcode-ish */}
       <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
         <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Show at checkout</p>
         <FauxBarcode value={card.code} />
@@ -302,7 +528,6 @@ function Detail({
         </button>
       </div>
 
-      {/* Spend */}
       <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
         <p className="text-sm font-semibold mb-2">Log a purchase</p>
         <div className="flex gap-2">
@@ -340,7 +565,6 @@ function Detail({
 }
 
 function FauxBarcode({ value }: { value: string }) {
-  // Generate deterministic-ish bar widths from value
   const bars = useMemo(() => {
     const arr: number[] = [];
     for (let i = 0; i < value.length * 2 + 12; i++) {
@@ -362,13 +586,222 @@ function FauxBarcode({ value }: { value: string }) {
   );
 }
 
+/* ---------- Brand picker ---------- */
+function PickBrand({
+  onCancel, onPick, onManual,
+}: {
+  onCancel: () => void;
+  onPick: (b: Brand) => void;
+  onManual: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return null;
+    return BRANDS.filter((b) => b.name.toLowerCase().includes(s));
+  }, [q]);
+  const popular = BRANDS.filter((b) => b.popular);
+  const others = BRANDS.filter((b) => !b.popular);
+
+  return (
+    <div className="px-5">
+      <div className="flex items-center justify-between">
+        <span className="w-6" />
+        <p className="font-display text-xl">Choose card</p>
+        <button onClick={onCancel} className="text-xl text-muted-foreground active:opacity-70" aria-label="Close">✕</button>
+      </div>
+
+      <div className="mt-4 flex items-center rounded-full bg-secondary px-4 h-11">
+        <span className="text-muted-foreground mr-2">🔍</span>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by name"
+          className="bg-transparent w-full outline-none text-sm"
+        />
+      </div>
+
+      {filtered ? (
+        <BrandList brands={filtered} onPick={onPick} title="Results" />
+      ) : (
+        <>
+          <BrandList brands={popular} onPick={onPick} title="Popular cards" />
+          <BrandList brands={others} onPick={onPick} title="More brands" />
+        </>
+      )}
+
+      <button
+        onClick={onManual}
+        className="mt-6 mb-2 w-full h-11 rounded-xl bg-card border border-dashed border-border text-sm text-muted-foreground"
+      >
+        Can't find it? Add manually
+      </button>
+    </div>
+  );
+}
+
+function BrandList({
+  brands, onPick, title,
+}: { brands: Brand[]; onPick: (b: Brand) => void; title: string }) {
+  if (!brands.length) return null;
+  return (
+    <>
+      <h2 className="font-display text-2xl mt-5 mb-2">{title}</h2>
+      <ul className="rounded-2xl bg-card border border-border overflow-hidden">
+        {brands.map((b, i) => (
+          <li key={b.name}>
+            <button
+              onClick={() => onPick(b)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left active:bg-secondary/70 transition ${
+                i ? "border-t border-border" : ""
+              }`}
+            >
+              <BrandLogo brand={b} />
+              <span className="flex-1 font-medium text-[15px]">{b.name}</span>
+              <span className="text-muted-foreground">›</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/* ---------- Scan (camera viewfinder) ---------- */
+function Scan({
+  brand, onCancel, onScanned, onManual,
+}: {
+  brand: Brand;
+  onCancel: () => void;
+  onScanned: (code: string) => void;
+  onManual: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [status, setStatus] = useState<"starting" | "ready" | "denied" | "unsupported" | "scanning">("starting");
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const start = async () => {
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        setStatus("unsupported"); return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } }, audio: false,
+        });
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setStatus("ready");
+      } catch {
+        setStatus("denied");
+      }
+    };
+    start();
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  // Simulated scan — after a short delay, auto-detect a barcode for the brand.
+  useEffect(() => {
+    if (status !== "ready") return;
+    setStatus("scanning");
+    const id = setTimeout(() => {
+      const prefix = brand.name.replace(/[^A-Z]/gi, "").slice(0, 4).toUpperCase() || "GIFT";
+      const code = `${prefix}-${rand(4)}-${rand(4)}-${rand(4)}`;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      onScanned(code);
+    }, 2400);
+    return () => clearTimeout(id);
+  }, [status, brand, onScanned]);
+
+  const message =
+    status === "starting" ? "Starting camera…" :
+    status === "denied" ? "Camera permission denied" :
+    status === "unsupported" ? "Camera not available on this device" :
+    "Hold the barcode inside the frame";
+
+  return (
+    <div className="relative h-full bg-black text-white">
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        className="absolute inset-0 w-full h-full object-cover opacity-90"
+      />
+      {/* Fallback gradient if no video */}
+      <div className="absolute inset-0 -z-10 bg-gradient-to-br from-zinc-800 to-black" />
+
+      {/* Top bar */}
+      <div className="relative z-10 flex items-center justify-between px-5 pt-2">
+        <button onClick={onCancel} className="text-sm bg-black/40 backdrop-blur rounded-full px-3 py-1.5">← Back</button>
+        <div className="flex items-center gap-2 bg-black/40 backdrop-blur rounded-full px-3 py-1.5">
+          <BrandLogo brand={brand} size={22} />
+          <span className="text-xs font-semibold">{brand.name}</span>
+        </div>
+        <span className="w-12" />
+      </div>
+
+      {/* Viewfinder */}
+      <div className="relative z-10 mt-10 mx-auto w-[78%] aspect-[1.6/1]">
+        <div className="absolute inset-0 rounded-2xl border-2 border-white/80" />
+        {/* Corner brackets */}
+        {["top-0 left-0 border-l-4 border-t-4 rounded-tl-2xl",
+          "top-0 right-0 border-r-4 border-t-4 rounded-tr-2xl",
+          "bottom-0 left-0 border-l-4 border-b-4 rounded-bl-2xl",
+          "bottom-0 right-0 border-r-4 border-b-4 rounded-br-2xl"].map((c) => (
+          <span key={c} className={`absolute h-8 w-8 border-coral ${c}`} />
+        ))}
+        {/* Scanning line */}
+        <span className="absolute left-3 right-3 top-1/2 h-[2px] bg-coral shadow-[0_0_12px_2px_var(--coral)] animate-pulse" />
+      </div>
+
+      <p className="relative z-10 text-center text-sm mt-6 px-8 text-white/90">
+        {message}
+      </p>
+      {status === "scanning" && (
+        <p className="relative z-10 text-center text-[11px] text-white/60 mt-1">Auto-detecting barcode…</p>
+      )}
+
+      <div className="absolute left-0 right-0 bottom-6 z-10 px-6 flex flex-col items-center gap-3">
+        {(status === "denied" || status === "unsupported") && (
+          <button
+            onClick={() => onScanned(`${brand.name.replace(/[^A-Z]/gi, "").slice(0,4).toUpperCase() || "GIFT"}-${rand(4)}-${rand(4)}-${rand(4)}`)}
+            className="w-full max-w-[260px] h-11 rounded-full gradient-peach text-white text-sm font-semibold"
+          >
+            Use demo barcode
+          </button>
+        )}
+        <button onClick={onManual} className="text-xs text-white/70 underline underline-offset-2">
+          Enter code manually
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function rand(n: number) {
+  return Math.random().toString(36).replace(/[^a-z0-9]/g, "").slice(0, n).toUpperCase().padEnd(n, "0");
+}
+
 /* ---------- Add card ---------- */
 function AddCard({
-  onCancel, onSave,
-}: { onCancel: () => void; onSave: (c: SpendyCard) => void }) {
-  const [brand, setBrand] = useState("");
+  onCancel, onSave, presetBrand, presetCode,
+}: {
+  onCancel: () => void;
+  onSave: (c: SpendyCard) => void;
+  presetBrand?: Brand;
+  presetCode?: string;
+}) {
+  const [brand, setBrand] = useState(presetBrand?.name ?? "");
   const [balance, setBalance] = useState("");
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(presetCode ?? "");
   const [kind, setKind] = useState<CardKind>("gift");
   const [days, setDays] = useState("90");
 
@@ -380,49 +813,71 @@ function AddCard({
     "linear-gradient(135deg,#0058A3,#003e75)",
     "linear-gradient(135deg,#d4a3b2,#a36a7d)",
   ];
-  const [color, setColor] = useState(palette[0]);
+  const [color, setColor] = useState(presetBrand?.cardGradient ?? palette[0]);
   const emojis = ["🎁", "💄", "☕", "🛒", "👗", "👕", "🍎", "🛋️", "✨", "🎟️"];
-  const [emoji, setEmoji] = useState("🎁");
+  const [emoji, setEmoji] = useState(presetBrand?.emoji ?? "🎁");
 
   const valid = brand.trim() && +balance > 0;
 
   return (
     <div className="px-5">
       <div className="flex items-center justify-between">
-        <button onClick={onCancel} className="text-sm text-muted-foreground">← Cancel</button>
+        <button onClick={onCancel} className="text-sm text-muted-foreground">← Back</button>
         <p className="font-display text-xl">Add card</p>
         <span className="w-10" />
       </div>
 
-      {/* Capture options — visual only */}
-      <div className="mt-5 grid grid-cols-3 gap-2">
-        {[
-          { icon: "📷", label: "Snap" },
-          { icon: "🔢", label: "Scan code" },
-          { icon: "✉️", label: "Forward" },
-        ].map((opt) => (
-          <button
-            key={opt.label}
-            className="rounded-2xl bg-card border border-border p-3 text-center shadow-soft active:scale-95 transition"
-          >
-            <div className="text-xl">{opt.icon}</div>
-            <div className="text-[11px] mt-1 text-muted-foreground">{opt.label}</div>
-          </button>
-        ))}
-      </div>
-      <p className="text-[11px] text-muted-foreground mt-2 text-center">
-        Or enter the details manually below
-      </p>
+      {presetBrand && (
+        <div className="mt-4 flex items-center gap-3 p-3 rounded-2xl bg-card border border-border">
+          <BrandLogo brand={presetBrand} />
+          <div className="flex-1">
+            <p className="font-semibold text-sm">{presetBrand.name}</p>
+            {presetCode ? (
+              <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                Scanned · {presetCode}
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground mt-0.5">Manual entry</p>
+            )}
+          </div>
+          {presetCode && <span className="text-coral text-lg">✓</span>}
+        </div>
+      )}
+
+      {!presetBrand && (
+        <>
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            {[
+              { icon: "📷", label: "Snap" },
+              { icon: "🔢", label: "Scan code" },
+              { icon: "✉️", label: "Forward" },
+            ].map((opt) => (
+              <button
+                key={opt.label}
+                className="rounded-2xl bg-card border border-border p-3 text-center shadow-soft active:scale-95 transition"
+              >
+                <div className="text-xl">{opt.icon}</div>
+                <div className="text-[11px] mt-1 text-muted-foreground">{opt.label}</div>
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2 text-center">
+            Or enter the details manually below
+          </p>
+        </>
+      )}
 
       <div className="mt-5 space-y-3">
-        <Field label="Brand">
-          <input
-            value={brand}
-            onChange={(e) => setBrand(e.target.value)}
-            placeholder="e.g. Sephora"
-            className="bg-transparent h-11 w-full outline-none"
-          />
-        </Field>
+        {!presetBrand && (
+          <Field label="Brand">
+            <input
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              placeholder="e.g. Sephora"
+              className="bg-transparent h-11 w-full outline-none"
+            />
+          </Field>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Balance">
@@ -478,29 +933,31 @@ function AddCard({
           </div>
         </div>
 
-        <div>
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Look</p>
-          <div className="flex gap-2 flex-wrap">
-            {palette.map((p) => (
-              <button
-                key={p}
-                onClick={() => setColor(p)}
-                className={`h-9 w-9 rounded-xl border-2 transition ${color === p ? "border-coral" : "border-transparent"}`}
-                style={{ background: p }}
-                aria-label="color"
-              />
-            ))}
+        {!presetBrand && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Look</p>
+            <div className="flex gap-2 flex-wrap">
+              {palette.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setColor(p)}
+                  className={`h-9 w-9 rounded-xl border-2 transition ${color === p ? "border-coral" : "border-transparent"}`}
+                  style={{ background: p }}
+                  aria-label="color"
+                />
+              ))}
+            </div>
+            <div className="flex gap-1.5 flex-wrap mt-3">
+              {emojis.map((e) => (
+                <button
+                  key={e}
+                  onClick={() => setEmoji(e)}
+                  className={`h-9 w-9 rounded-xl text-lg transition ${emoji === e ? "bg-accent" : "bg-secondary"}`}
+                >{e}</button>
+              ))}
+            </div>
           </div>
-          <div className="flex gap-1.5 flex-wrap mt-3">
-            {emojis.map((e) => (
-              <button
-                key={e}
-                onClick={() => setEmoji(e)}
-                className={`h-9 w-9 rounded-xl text-lg transition ${emoji === e ? "bg-accent" : "bg-secondary"}`}
-              >{e}</button>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
 
       <button
@@ -584,8 +1041,23 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
 
 function Plus() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
     </svg>
   );
+}
+
+/* ---------- Nav icons ---------- */
+const stroke = { stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, fill: "none" };
+function IconHome() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24"><path {...stroke} d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1v-9z"/></svg>);
+}
+function IconBook() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24"><path {...stroke} d="M4 5a2 2 0 012-2h12v16H6a2 2 0 00-2 2V5z"/><path {...stroke} d="M8 7h6M8 11h6"/></svg>);
+}
+function IconWallet() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24"><path {...stroke} d="M3 7a2 2 0 012-2h12a2 2 0 012 2v2H5a2 2 0 00-2 2V7z"/><path {...stroke} d="M3 11a2 2 0 012-2h14a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6z"/><circle {...stroke} cx="17" cy="14" r="1.3"/></svg>);
+}
+function IconUser() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24"><circle {...stroke} cx="12" cy="8" r="3.5"/><path {...stroke} d="M5 20c1-3.5 4-5.5 7-5.5s6 2 7 5.5"/></svg>);
 }
