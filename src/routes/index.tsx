@@ -7,6 +7,14 @@ import {
   loadCards, saveCards, daysUntil, formatMoney,
   type SpendyCard, type CardKind,
 } from "@/lib/spendy-data";
+import {
+  loadTransactions, saveTransactions, formatWhen, type Transaction,
+} from "@/lib/spendy-transactions";
+import {
+  CENTRES, findCentre, ensureNotificationPermission, showCentreNotification,
+  type ShoppingCentre,
+} from "@/lib/spendy-location";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
