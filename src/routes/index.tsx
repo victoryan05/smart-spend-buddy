@@ -334,6 +334,7 @@ function Home({
   const expiringSoon = cards.filter((c) => daysUntil(c.expiresAt) <= 30 && c.balance > 0);
   const nudgeCard = cards.find((c) => c.brand === "Sephora" && c.balance > 0);
   const featured = CATALOGUES.slice(0, 4);
+  const recent = txs.slice(0, 3);
 
   return (
     <div className="px-5">
@@ -358,7 +359,49 @@ function Home({
         </p>
       </section>
 
-      {!nudgeDismissed && nudgeCard && (
+      {/* Geofence nudge — replaces / sits above the static Sephora nudge */}
+      {centre ? (
+        <div className="mt-4 rounded-2xl p-4 gradient-peach text-white shadow-soft">
+          <div className="flex items-start gap-3">
+            <div className="h-9 w-9 rounded-full bg-white/20 grid place-items-center text-lg shrink-0">📍</div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold">You're at {centre.name}</p>
+              <p className="text-[12px] opacity-90 mt-0.5 leading-snug">
+                {formatMoney(total)} to spend over {cards.length} card{cards.length === 1 ? "" : "s"}.
+                Open Spendy at the till.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : locStatus === "off" ? (
+        <div className="mt-4 rounded-2xl bg-card border border-border p-4 shadow-soft">
+          <p className="text-[13px] font-semibold">Get nudged at the shops</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+            Spendy will quietly remind you when you walk into Westfield or another centre with cards waiting.
+          </p>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={onEnableLocation}
+              className="flex-1 h-9 rounded-xl gradient-peach text-white text-xs font-semibold active:scale-[.99]"
+            >Enable location</button>
+            <button
+              onClick={onSimulateCentre}
+              className="h-9 px-3 rounded-xl bg-secondary text-xs font-medium"
+            >Simulate</button>
+          </div>
+        </div>
+      ) : locStatus === "denied" ? (
+        <div className="mt-4 rounded-2xl bg-card border border-border p-4 shadow-soft">
+          <p className="text-[13px] font-semibold">Location off</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+            Allow location in your browser/device settings to get centre nudges.
+          </p>
+          <button
+            onClick={onSimulateCentre}
+            className="mt-3 h-9 px-3 rounded-xl bg-secondary text-xs font-medium"
+          >Simulate Westfield</button>
+        </div>
+      ) : !nudgeDismissed && nudgeCard ? (
         <button
           onClick={() => onOpen(nudgeCard.id)}
           className="mt-4 w-full text-left rounded-2xl bg-card border border-border p-4 flex gap-3 items-start shadow-soft active:scale-[.99] transition"
@@ -376,7 +419,22 @@ function Home({
             className="text-muted-foreground text-xs px-1 py-0.5"
           >✕</span>
         </button>
-      )}
+      ) : null}
+
+      {/* Snap receipt CTA */}
+      <button
+        onClick={onSnapReceipt}
+        className="mt-4 w-full flex items-center gap-3 rounded-2xl bg-card border border-border p-4 shadow-soft active:scale-[.99] transition text-left"
+      >
+        <div className="h-10 w-10 rounded-full bg-accent/60 grid place-items-center text-lg shrink-0">🧾</div>
+        <div className="flex-1">
+          <p className="text-[13px] font-semibold">Just finished shopping?</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+            Snap your receipt — we'll log the transaction and store it for returns.
+          </p>
+        </div>
+        <span className="text-coral">→</span>
+      </button>
 
       {expiringSoon.length > 0 && (
         <button
@@ -422,9 +480,19 @@ function Home({
           </ul>
         )}
       </section>
+
+      {recent.length > 0 && (
+        <section className="mt-6">
+          <h2 className="font-display text-2xl mb-3">Recent activity</h2>
+          <ul className="space-y-2">
+            {recent.map((t) => <TxRow key={t.id} tx={t} />)}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
+
 
 /* ---------- Wallet tab ---------- */
 function Wallet({
