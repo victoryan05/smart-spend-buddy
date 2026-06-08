@@ -311,16 +311,25 @@ function NavBtn({
 
 /* ---------- Home ---------- */
 function Home({
-  cards, onOpen, onAdd, onExpiring, onCatalogues, nudgeDismissed, onDismissNudge,
+  cards, txs, onOpen, onAdd, onExpiring, onCatalogues, onSnapReceipt,
+  nudgeDismissed, onDismissNudge,
+  centre, locStatus, onEnableLocation, onSimulateCentre,
 }: {
   cards: SpendyCard[];
+  txs: Transaction[];
   onOpen: (id: string) => void;
   onAdd: () => void;
   onExpiring: () => void;
   onCatalogues: () => void;
+  onSnapReceipt: () => void;
   nudgeDismissed: boolean;
   onDismissNudge: () => void;
+  centre: ShoppingCentre | null;
+  locStatus: "off" | "watching" | "denied";
+  onEnableLocation: () => void;
+  onSimulateCentre: () => void;
 }) {
+
   const total = cards.reduce((s, c) => s + c.balance, 0);
   const expiringSoon = cards.filter((c) => daysUntil(c.expiresAt) <= 30 && c.balance > 0);
   const nudgeCard = cards.find((c) => c.brand === "Sephora" && c.balance > 0);
