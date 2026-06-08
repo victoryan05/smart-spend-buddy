@@ -601,19 +601,52 @@ function CatalogueTile({ c }: { c: typeof CATALOGUES[number] }) {
 }
 
 /* ---------- More tab ---------- */
-function More() {
-  const items = [
-    { icon: "🔔", label: "Notifications & nudges" },
-    { icon: "📍", label: "Location reminders" },
-    { icon: "🤝", label: "Partner with Spendy", note: "For corporates" },
-    { icon: "🔒", label: "Privacy" },
-    { icon: "❓", label: "Help & support" },
-  ];
+function More({
+  locStatus, onEnableLocation, onSimulateCentre,
+}: {
+  locStatus: "off" | "watching" | "denied";
+  onEnableLocation: () => void;
+  onSimulateCentre: () => void;
+}) {
+  const statusLabel =
+    locStatus === "watching" ? "On" :
+    locStatus === "denied" ? "Blocked" : "Off";
   return (
     <div className="px-5">
       <h1 className="font-display text-3xl">More</h1>
-      <ul className="mt-5 rounded-2xl bg-card border border-border overflow-hidden">
-        {items.map((i, idx) => (
+
+      <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+        <div className="flex items-start gap-3">
+          <span className="text-xl">📍</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Location reminders</p>
+            <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+              Get notified at Westfield and other partner centres — even when Spendy is closed
+              (requires a quick OS permission).
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={onEnableLocation}
+                className="h-9 px-3 rounded-xl gradient-peach text-white text-xs font-semibold"
+              >Enable</button>
+              <button
+                onClick={onSimulateCentre}
+                className="h-9 px-3 rounded-xl bg-secondary text-xs font-medium"
+              >Simulate Westfield</button>
+            </div>
+          </div>
+          <span className="text-[11px] text-muted-foreground">{statusLabel}</span>
+        </div>
+      </div>
+
+      <ul className="mt-4 rounded-2xl bg-card border border-border overflow-hidden">
+        {[
+          { icon: "🔔", label: "Notifications & nudges" },
+          { icon: "🧾", label: "Receipts vault", note: "Stored for returns & refunds" },
+          { icon: "🤝", label: "Partner with Spendy", note: "For corporates" },
+          { icon: "🔒", label: "Privacy" },
+          { icon: "❓", label: "Help & support" },
+        ].map((i, idx) => (
           <li key={i.label}
               className={`flex items-center gap-3 px-4 py-3 ${idx ? "border-t border-border" : ""}`}>
             <span className="text-xl">{i.icon}</span>
@@ -628,6 +661,7 @@ function More() {
     </div>
   );
 }
+
 
 /* ---------- Card row ---------- */
 function CardRow({ card, onClick }: { card: SpendyCard; onClick: () => void }) {
