@@ -38,19 +38,75 @@ type Screen =
 
 function Index() {
   const [cards, setCards] = useState<SpendyCard[]>([]);
+  const [txs, setTxs] = useState<Transaction[]>([]);
   const [screen, setScreen] = useState<Screen>({ name: "tab", tab: "home" });
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
+  const [centre, setCentre] = useState<ShoppingCentre | null>(null);
+  const [locStatus, setLocStatus] = useState<"off" | "watching" | "denied">("off");
+  const lastNotifiedCentreRef = useRef<string | null>(null);
 
-  useEffect(() => { setCards(loadCards()); }, []);
+  useEffect(() => {
+    setCards(loadCards());
+    setTxs(loadTransactions());
+  }, []);
   useEffect(() => { if (cards.length) saveCards(cards); }, [cards]);
+  useEffect(() => { saveTransactions(txs); }, [txs]);
 
-  const update = (next: SpendyCard[] | ((p: SpendyCard[]) => SpendyCard[])) =>
-    setCards(typeof next === "function" ? (next as any) : next);
+  const totalBalance = useMemo(() => cards.reduce((s, c) => s + c.balance, 0), [cards]);
+
+  // Fire the OS notification when we enter a centre (works while app is open;
+  // for true background delivery a service-worker / native wrapper is needed).
+  useEffect(() => {
+    if (!centre) { lastNotifiedCentreRef.current = null; return; }
+    if (lastNotifiedCentreRef.current === centre.name) return;
+    lastNotifiedCentreRef.current = centre.name;
+    showCentreNotification(centre.name, formatMoney(totalBalance), cards.length);
+  }, [centre, totalBalance, cards.length]);
+
+  const enableLocation = async () => {
+    await ensureNotificationPermission();
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocStatus("denied"); return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLocStatus("watching");
+        const hit = findCentre({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setCentre(hit);
+      },
+      () => setLocStatus("denied"),
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 },
+    );
+    // Stash id so we could clear later; for prototype we leave it watching.
+    void id;
+  };
+
+  const simulateCentre = () => {
+    const demo = CENTRES[0];
+    setCentre(demo);
+    setLocStatus("watching");
+    void ensureNotificationPermission();
+  };
+
+  const recordTransaction = (cardId: string, amount: number, receiptDataUrl?: string, note?: string) => {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card || amount <= 0) return;
+    setCards((cs) => cs.map((c) =>
+      c.id === cardId ? { ...c, balance: Math.max(0, +(c.balance - amount).toFixed(2)) } : c
+    ));
+    setTxs((prev) => [{
+      id: crypto.randomUUID(),
+      cardId, brand: card.brand, amount, currency: card.currency,
+      note, createdAt: new Date().toISOString(), receiptDataUrl,
+      location: centre?.name,
+    }, ...prev]);
+  };
 
   const currentTab: Tab | null = screen.name === "tab" ? screen.tab : null;
 
   const goTab = (tab: Tab) => setScreen({ name: "tab", tab });
   const openAdd = () => setScreen({ name: "pick" });
+
 
   return (
     <main className="min-h-screen w-full flex flex-col items-center px-4 py-6 md:py-10">
