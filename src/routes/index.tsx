@@ -7,6 +7,14 @@ import {
   loadCards, saveCards, daysUntil, formatMoney,
   type SpendyCard, type CardKind,
 } from "@/lib/spendy-data";
+import {
+  loadTransactions, saveTransactions, formatWhen, type Transaction,
+} from "@/lib/spendy-transactions";
+import {
+  CENTRES, findCentre, ensureNotificationPermission, showCentreNotification,
+  type ShoppingCentre,
+} from "@/lib/spendy-location";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -26,23 +34,81 @@ type Screen =
   | { name: "pick" }                       // choose-brand list
   | { name: "scan"; brand: Brand }         // camera viewfinder
   | { name: "add"; brand?: Brand; code?: string }
-  | { name: "expiring" };
+  | { name: "expiring" }
+  | { name: "receipt" };                   // snap-receipt flow
+
 
 function Index() {
   const [cards, setCards] = useState<SpendyCard[]>([]);
+  const [txs, setTxs] = useState<Transaction[]>([]);
   const [screen, setScreen] = useState<Screen>({ name: "tab", tab: "home" });
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
+  const [centre, setCentre] = useState<ShoppingCentre | null>(null);
+  const [locStatus, setLocStatus] = useState<"off" | "watching" | "denied">("off");
+  const lastNotifiedCentreRef = useRef<string | null>(null);
 
-  useEffect(() => { setCards(loadCards()); }, []);
+  useEffect(() => {
+    setCards(loadCards());
+    setTxs(loadTransactions());
+  }, []);
   useEffect(() => { if (cards.length) saveCards(cards); }, [cards]);
+  useEffect(() => { saveTransactions(txs); }, [txs]);
 
-  const update = (next: SpendyCard[] | ((p: SpendyCard[]) => SpendyCard[])) =>
-    setCards(typeof next === "function" ? (next as any) : next);
+  const totalBalance = useMemo(() => cards.reduce((s, c) => s + c.balance, 0), [cards]);
+
+  // Fire the OS notification when we enter a centre (works while app is open;
+  // for true background delivery a service-worker / native wrapper is needed).
+  useEffect(() => {
+    if (!centre) { lastNotifiedCentreRef.current = null; return; }
+    if (lastNotifiedCentreRef.current === centre.name) return;
+    lastNotifiedCentreRef.current = centre.name;
+    showCentreNotification(centre.name, formatMoney(totalBalance), cards.length);
+  }, [centre, totalBalance, cards.length]);
+
+  const enableLocation = async () => {
+    await ensureNotificationPermission();
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocStatus("denied"); return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLocStatus("watching");
+        const hit = findCentre({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setCentre(hit);
+      },
+      () => setLocStatus("denied"),
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 },
+    );
+    // Stash id so we could clear later; for prototype we leave it watching.
+    void id;
+  };
+
+  const simulateCentre = () => {
+    const demo = CENTRES[0];
+    setCentre(demo);
+    setLocStatus("watching");
+    void ensureNotificationPermission();
+  };
+
+  const recordTransaction = (cardId: string, amount: number, receiptDataUrl?: string, note?: string) => {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card || amount <= 0) return;
+    setCards((cs) => cs.map((c) =>
+      c.id === cardId ? { ...c, balance: Math.max(0, +(c.balance - amount).toFixed(2)) } : c
+    ));
+    setTxs((prev) => [{
+      id: crypto.randomUUID(),
+      cardId, brand: card.brand, amount, currency: card.currency,
+      note, createdAt: new Date().toISOString(), receiptDataUrl,
+      location: centre?.name,
+    }, ...prev]);
+  };
 
   const currentTab: Tab | null = screen.name === "tab" ? screen.tab : null;
 
   const goTab = (tab: Tab) => setScreen({ name: "tab", tab });
   const openAdd = () => setScreen({ name: "pick" });
+
 
   return (
     <main className="min-h-screen w-full flex flex-col items-center px-4 py-6 md:py-10">
@@ -59,17 +125,24 @@ function Index() {
             {screen.name === "tab" && screen.tab === "home" && (
               <Home
                 cards={cards}
+                txs={txs}
                 onOpen={(id) => setScreen({ name: "detail", id })}
                 onAdd={openAdd}
                 onExpiring={() => setScreen({ name: "expiring" })}
                 onCatalogues={() => goTab("catalogues")}
+                onSnapReceipt={() => setScreen({ name: "receipt" })}
                 nudgeDismissed={nudgeDismissed}
                 onDismissNudge={() => setNudgeDismissed(true)}
+                centre={centre}
+                locStatus={locStatus}
+                onEnableLocation={enableLocation}
+                onSimulateCentre={simulateCentre}
               />
             )}
             {screen.name === "tab" && screen.tab === "wallet" && (
               <Wallet
                 cards={cards}
+                txs={txs}
                 onOpen={(id) => setScreen({ name: "detail", id })}
                 onAdd={openAdd}
               />
@@ -77,7 +150,13 @@ function Index() {
             {screen.name === "tab" && screen.tab === "catalogues" && (
               <Catalogues />
             )}
-            {screen.name === "tab" && screen.tab === "more" && <More />}
+            {screen.name === "tab" && screen.tab === "more" && (
+              <More
+                locStatus={locStatus}
+                onEnableLocation={enableLocation}
+                onSimulateCentre={simulateCentre}
+              />
+            )}
 
             {screen.name === "detail" && (() => {
               const card = cards.find((c) => c.id === screen.id);
@@ -85,16 +164,13 @@ function Index() {
               return (
                 <Detail
                   card={card}
+                  txs={txs.filter((t) => t.cardId === card.id)}
                   onBack={() => setScreen({ name: "tab", tab: "wallet" })}
-                  onSpend={(amount) =>
-                    update((cs) => cs.map((c) =>
-                      c.id === card.id
-                        ? { ...c, balance: Math.max(0, +(c.balance - amount).toFixed(2)) }
-                        : c
-                    ))
+                  onSpend={(amount, receiptDataUrl, note) =>
+                    recordTransaction(card.id, amount, receiptDataUrl, note)
                   }
                   onDelete={() => {
-                    update((cs) => cs.filter((c) => c.id !== card.id));
+                    setCards((cs) => cs.filter((c) => c.id !== card.id));
                     setScreen({ name: "tab", tab: "wallet" });
                   }}
                 />
@@ -123,7 +199,7 @@ function Index() {
                 presetBrand={screen.brand}
                 presetCode={screen.code}
                 onCancel={() => setScreen({ name: "pick" })}
-                onSave={(c) => { update((cs) => [c, ...cs]); setScreen({ name: "tab", tab: "wallet" }); }}
+                onSave={(c) => { setCards((cs) => [c, ...cs]); setScreen({ name: "tab", tab: "wallet" }); }}
               />
             )}
 
@@ -134,6 +210,18 @@ function Index() {
                 onOpen={(id) => setScreen({ name: "detail", id })}
               />
             )}
+
+            {screen.name === "receipt" && (
+              <SnapReceipt
+                cards={cards}
+                onCancel={() => setScreen({ name: "tab", tab: "home" })}
+                onSave={(cardId, amount, dataUrl, note) => {
+                  recordTransaction(cardId, amount, dataUrl, note);
+                  setScreen({ name: "tab", tab: "wallet" });
+                }}
+              />
+            )}
+
           </div>
 
           <BottomNav
@@ -223,20 +311,30 @@ function NavBtn({
 
 /* ---------- Home ---------- */
 function Home({
-  cards, onOpen, onAdd, onExpiring, onCatalogues, nudgeDismissed, onDismissNudge,
+  cards, txs, onOpen, onAdd, onExpiring, onCatalogues, onSnapReceipt,
+  nudgeDismissed, onDismissNudge,
+  centre, locStatus, onEnableLocation, onSimulateCentre,
 }: {
   cards: SpendyCard[];
+  txs: Transaction[];
   onOpen: (id: string) => void;
   onAdd: () => void;
   onExpiring: () => void;
   onCatalogues: () => void;
+  onSnapReceipt: () => void;
   nudgeDismissed: boolean;
   onDismissNudge: () => void;
+  centre: ShoppingCentre | null;
+  locStatus: "off" | "watching" | "denied";
+  onEnableLocation: () => void;
+  onSimulateCentre: () => void;
 }) {
+
   const total = cards.reduce((s, c) => s + c.balance, 0);
   const expiringSoon = cards.filter((c) => daysUntil(c.expiresAt) <= 30 && c.balance > 0);
   const nudgeCard = cards.find((c) => c.brand === "Sephora" && c.balance > 0);
   const featured = CATALOGUES.slice(0, 4);
+  const recent = txs.slice(0, 3);
 
   return (
     <div className="px-5">
@@ -261,7 +359,49 @@ function Home({
         </p>
       </section>
 
-      {!nudgeDismissed && nudgeCard && (
+      {/* Geofence nudge — replaces / sits above the static Sephora nudge */}
+      {centre ? (
+        <div className="mt-4 rounded-2xl p-4 gradient-peach text-white shadow-soft">
+          <div className="flex items-start gap-3">
+            <div className="h-9 w-9 rounded-full bg-white/20 grid place-items-center text-lg shrink-0">📍</div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold">You're at {centre.name}</p>
+              <p className="text-[12px] opacity-90 mt-0.5 leading-snug">
+                {formatMoney(total)} to spend over {cards.length} card{cards.length === 1 ? "" : "s"}.
+                Open Spendy at the till.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : locStatus === "off" ? (
+        <div className="mt-4 rounded-2xl bg-card border border-border p-4 shadow-soft">
+          <p className="text-[13px] font-semibold">Get nudged at the shops</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+            Spendy will quietly remind you when you walk into Westfield or another centre with cards waiting.
+          </p>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={onEnableLocation}
+              className="flex-1 h-9 rounded-xl gradient-peach text-white text-xs font-semibold active:scale-[.99]"
+            >Enable location</button>
+            <button
+              onClick={onSimulateCentre}
+              className="h-9 px-3 rounded-xl bg-secondary text-xs font-medium"
+            >Simulate</button>
+          </div>
+        </div>
+      ) : locStatus === "denied" ? (
+        <div className="mt-4 rounded-2xl bg-card border border-border p-4 shadow-soft">
+          <p className="text-[13px] font-semibold">Location off</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+            Allow location in your browser/device settings to get centre nudges.
+          </p>
+          <button
+            onClick={onSimulateCentre}
+            className="mt-3 h-9 px-3 rounded-xl bg-secondary text-xs font-medium"
+          >Simulate Westfield</button>
+        </div>
+      ) : !nudgeDismissed && nudgeCard ? (
         <button
           onClick={() => onOpen(nudgeCard.id)}
           className="mt-4 w-full text-left rounded-2xl bg-card border border-border p-4 flex gap-3 items-start shadow-soft active:scale-[.99] transition"
@@ -279,7 +419,22 @@ function Home({
             className="text-muted-foreground text-xs px-1 py-0.5"
           >✕</span>
         </button>
-      )}
+      ) : null}
+
+      {/* Snap receipt CTA */}
+      <button
+        onClick={onSnapReceipt}
+        className="mt-4 w-full flex items-center gap-3 rounded-2xl bg-card border border-border p-4 shadow-soft active:scale-[.99] transition text-left"
+      >
+        <div className="h-10 w-10 rounded-full bg-accent/60 grid place-items-center text-lg shrink-0">🧾</div>
+        <div className="flex-1">
+          <p className="text-[13px] font-semibold">Just finished shopping?</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+            Snap your receipt — we'll log the transaction and store it for returns.
+          </p>
+        </div>
+        <span className="text-coral">→</span>
+      </button>
 
       {expiringSoon.length > 0 && (
         <button
@@ -325,14 +480,25 @@ function Home({
           </ul>
         )}
       </section>
+
+      {recent.length > 0 && (
+        <section className="mt-6">
+          <h2 className="font-display text-2xl mb-3">Recent activity</h2>
+          <ul className="space-y-2">
+            {recent.map((t) => <TxRow key={t.id} tx={t} />)}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
 
+
 /* ---------- Wallet tab ---------- */
 function Wallet({
-  cards, onOpen, onAdd,
-}: { cards: SpendyCard[]; onOpen: (id: string) => void; onAdd: () => void }) {
+  cards, txs, onOpen, onAdd,
+}: { cards: SpendyCard[]; txs: Transaction[]; onOpen: (id: string) => void; onAdd: () => void }) {
+  const [tab, setTab] = useState<"cards" | "activity">("cards");
   return (
     <div className="px-5">
       <div className="flex items-center justify-between">
@@ -345,23 +511,46 @@ function Wallet({
         </button>
       </div>
       <p className="text-sm text-muted-foreground mt-1">
-        {cards.length} card{cards.length === 1 ? "" : "s"} & codes
+        {cards.length} card{cards.length === 1 ? "" : "s"} · {txs.length} transaction{txs.length === 1 ? "" : "s"}
       </p>
 
-      {cards.length === 0 ? (
-        <div className="mt-6"><EmptyState onAdd={onAdd} /></div>
+      <div className="mt-4 flex bg-secondary rounded-full p-1 text-xs font-semibold">
+        {(["cards", "activity"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 h-8 rounded-full capitalize transition ${
+              tab === t ? "bg-card shadow-soft" : "text-muted-foreground"
+            }`}
+          >{t}</button>
+        ))}
+      </div>
+
+      {tab === "cards" ? (
+        cards.length === 0 ? (
+          <div className="mt-6"><EmptyState onAdd={onAdd} /></div>
+        ) : (
+          <ul className="mt-5 space-y-3">
+            {cards.map((c) => (
+              <li key={c.id}>
+                <CardRow card={c} onClick={() => onOpen(c.id)} />
+              </li>
+            ))}
+          </ul>
+        )
+      ) : txs.length === 0 ? (
+        <div className="mt-6 rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          No transactions yet. Snap a receipt after your next shop.
+        </div>
       ) : (
-        <ul className="mt-5 space-y-3">
-          {cards.map((c) => (
-            <li key={c.id}>
-              <CardRow card={c} onClick={() => onOpen(c.id)} />
-            </li>
-          ))}
+        <ul className="mt-5 space-y-2">
+          {txs.map((t) => <TxRow key={t.id} tx={t} />)}
         </ul>
       )}
     </div>
   );
 }
+
 
 /* ---------- Catalogues tab ---------- */
 function Catalogues() {
@@ -412,19 +601,52 @@ function CatalogueTile({ c }: { c: typeof CATALOGUES[number] }) {
 }
 
 /* ---------- More tab ---------- */
-function More() {
-  const items = [
-    { icon: "🔔", label: "Notifications & nudges" },
-    { icon: "📍", label: "Location reminders" },
-    { icon: "🤝", label: "Partner with Spendy", note: "For corporates" },
-    { icon: "🔒", label: "Privacy" },
-    { icon: "❓", label: "Help & support" },
-  ];
+function More({
+  locStatus, onEnableLocation, onSimulateCentre,
+}: {
+  locStatus: "off" | "watching" | "denied";
+  onEnableLocation: () => void;
+  onSimulateCentre: () => void;
+}) {
+  const statusLabel =
+    locStatus === "watching" ? "On" :
+    locStatus === "denied" ? "Blocked" : "Off";
   return (
     <div className="px-5">
       <h1 className="font-display text-3xl">More</h1>
-      <ul className="mt-5 rounded-2xl bg-card border border-border overflow-hidden">
-        {items.map((i, idx) => (
+
+      <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+        <div className="flex items-start gap-3">
+          <span className="text-xl">📍</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Location reminders</p>
+            <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+              Get notified at Westfield and other partner centres — even when Spendy is closed
+              (requires a quick OS permission).
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={onEnableLocation}
+                className="h-9 px-3 rounded-xl gradient-peach text-white text-xs font-semibold"
+              >Enable</button>
+              <button
+                onClick={onSimulateCentre}
+                className="h-9 px-3 rounded-xl bg-secondary text-xs font-medium"
+              >Simulate Westfield</button>
+            </div>
+          </div>
+          <span className="text-[11px] text-muted-foreground">{statusLabel}</span>
+        </div>
+      </div>
+
+      <ul className="mt-4 rounded-2xl bg-card border border-border overflow-hidden">
+        {[
+          { icon: "🔔", label: "Notifications & nudges" },
+          { icon: "🧾", label: "Receipts vault", note: "Stored for returns & refunds" },
+          { icon: "🤝", label: "Partner with Spendy", note: "For corporates" },
+          { icon: "🔒", label: "Privacy" },
+          { icon: "❓", label: "Help & support" },
+        ].map((i, idx) => (
           <li key={i.label}
               className={`flex items-center gap-3 px-4 py-3 ${idx ? "border-t border-border" : ""}`}>
             <span className="text-xl">{i.icon}</span>
@@ -439,6 +661,7 @@ function More() {
     </div>
   );
 }
+
 
 /* ---------- Card row ---------- */
 function CardRow({ card, onClick }: { card: SpendyCard; onClick: () => void }) {
@@ -480,15 +703,35 @@ function ExpiryPill({ days }: { days: number }) {
 
 /* ---------- Detail ---------- */
 function Detail({
-  card, onBack, onSpend, onDelete,
+  card, txs, onBack, onSpend, onDelete,
 }: {
   card: SpendyCard;
+  txs: Transaction[];
   onBack: () => void;
-  onSpend: (n: number) => void;
+  onSpend: (amount: number, receiptDataUrl?: string, note?: string) => void;
   onDelete: () => void;
 }) {
   const days = daysUntil(card.expiresAt);
   const [amount, setAmount] = useState("");
+  const [receipt, setReceipt] = useState<string | undefined>(undefined);
+  const [viewReceipt, setViewReceipt] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const onPickFile = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setReceipt(typeof reader.result === "string" ? reader.result : undefined);
+    reader.readAsDataURL(file);
+  };
+
+  const submit = () => {
+    const n = +amount;
+    if (!n || n <= 0) return;
+    onSpend(n, receipt);
+    setAmount(""); setReceipt(undefined);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
   return (
     <div className="px-5">
       <div className="flex items-center justify-between">
@@ -543,7 +786,7 @@ function Detail({
           </div>
           <button
             disabled={!amount || +amount <= 0}
-            onClick={() => { onSpend(+amount); setAmount(""); }}
+            onClick={submit}
             className="h-11 px-5 rounded-xl gradient-peach text-white text-sm font-semibold disabled:opacity-40 active:scale-[.99]"
           >
             Spend
@@ -558,11 +801,210 @@ function Detail({
             >${q}</button>
           ))}
         </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => onPickFile(e.target.files?.[0])}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="mt-3 w-full h-10 rounded-xl bg-secondary text-sm font-medium flex items-center justify-center gap-2 active:scale-[.99]"
+        >
+          <span>📷</span>
+          {receipt ? "Receipt attached — retake" : "Attach receipt photo"}
+        </button>
+        {receipt && (
+          <div className="mt-3 flex items-center gap-3">
+            <img src={receipt} alt="Receipt preview" className="h-16 w-16 rounded-lg object-cover border border-border" />
+            <button
+              onClick={() => setReceipt(undefined)}
+              className="text-xs text-muted-foreground underline underline-offset-2"
+            >Remove</button>
+          </div>
+        )}
         {card.note && <p className="text-[11px] text-muted-foreground mt-3">{card.note}</p>}
       </div>
+
+      <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+        <p className="text-sm font-semibold mb-2">Transactions</p>
+        {txs.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground">
+            No purchases logged yet. Spend the card or snap a receipt — it'll show up here.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {txs.map((t) => (
+              <TxRow key={t.id} tx={t} onReceipt={(url) => setViewReceipt(url)} />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {viewReceipt && (
+        <div
+          onClick={() => setViewReceipt(null)}
+          className="fixed inset-0 z-50 bg-black/80 grid place-items-center p-6"
+        >
+          <img src={viewReceipt} alt="Receipt" className="max-h-full max-w-full rounded-xl shadow-card" />
+        </div>
+      )}
     </div>
   );
 }
+
+/* ---------- Transaction row + Snap receipt ---------- */
+function TxRow({ tx, onReceipt }: { tx: Transaction; onReceipt?: (url: string) => void }) {
+  return (
+    <li className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border">
+      <button
+        onClick={() => tx.receiptDataUrl && onReceipt?.(tx.receiptDataUrl)}
+        disabled={!tx.receiptDataUrl}
+        className="h-10 w-10 rounded-lg bg-secondary grid place-items-center overflow-hidden shrink-0 disabled:cursor-default"
+        aria-label="View receipt"
+      >
+        {tx.receiptDataUrl
+          ? <img src={tx.receiptDataUrl} alt="" className="h-full w-full object-cover" />
+          : <span className="text-base">🧾</span>}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold truncate">{tx.brand}</p>
+          <p className="font-display text-base">-{formatMoney(tx.amount, tx.currency)}</p>
+        </div>
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-0.5">
+          <span className="truncate">
+            {formatWhen(tx.createdAt)}{tx.location ? ` · ${tx.location}` : ""}
+          </span>
+          {tx.receiptDataUrl && <span className="text-coral">Receipt saved</span>}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function SnapReceipt({
+  cards, onCancel, onSave,
+}: {
+  cards: SpendyCard[];
+  onCancel: () => void;
+  onSave: (cardId: string, amount: number, dataUrl: string | undefined, note?: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [receipt, setReceipt] = useState<string | undefined>(undefined);
+  const [cardId, setCardId] = useState<string>(cards[0]?.id ?? "");
+  const [amount, setAmount] = useState("");
+
+  useEffect(() => {
+    // Auto-prompt camera on mount for that "just finished shopping" flow.
+    const t = setTimeout(() => fileRef.current?.click(), 200);
+    return () => clearTimeout(t);
+  }, []);
+
+  const onPickFile = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setReceipt(typeof reader.result === "string" ? reader.result : undefined);
+    reader.readAsDataURL(file);
+  };
+
+  const valid = cardId && +amount > 0;
+
+  return (
+    <div className="px-5">
+      <div className="flex items-center justify-between">
+        <button onClick={onCancel} className="text-sm text-muted-foreground">← Back</button>
+        <p className="font-display text-xl">Snap receipt</p>
+        <span className="w-10" />
+      </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => onPickFile(e.target.files?.[0])}
+      />
+
+      <button
+        onClick={() => fileRef.current?.click()}
+        className="mt-5 w-full aspect-[4/3] rounded-3xl bg-card border border-dashed border-border grid place-items-center text-center overflow-hidden shadow-soft active:scale-[.99] transition"
+      >
+        {receipt ? (
+          <img src={receipt} alt="Receipt" className="h-full w-full object-cover" />
+        ) : (
+          <div>
+            <div className="text-4xl">📷</div>
+            <p className="text-sm font-semibold mt-2">Tap to open camera</p>
+            <p className="text-[11px] text-muted-foreground mt-1 px-8">
+              We'll save it as proof of purchase for returns or refunds.
+            </p>
+          </div>
+        )}
+      </button>
+
+      <div className="mt-5 space-y-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Paid with</p>
+          {cards.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Add a card first.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-2 max-h-44 overflow-y-auto">
+              {cards.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setCardId(c.id)}
+                  className={`flex items-center gap-3 p-2 rounded-xl border text-left transition ${
+                    cardId === c.id ? "border-coral bg-accent/30" : "border-border bg-card"
+                  }`}
+                >
+                  <div className="h-9 w-12 rounded-lg grid place-items-center text-base" style={{ background: c.color }}>
+                    <span>{c.emoji}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{c.brand}</p>
+                    <p className="text-[11px] text-muted-foreground">{formatMoney(c.balance, c.currency)} left</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Amount spent</p>
+          <div className="flex items-center rounded-xl bg-secondary px-3">
+            <span className="text-muted-foreground mr-1">$</span>
+            <input
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+              placeholder="0.00"
+              className="bg-transparent h-11 w-full outline-none text-base"
+            />
+          </div>
+        </div>
+      </div>
+
+      <button
+        disabled={!valid}
+        onClick={() => onSave(cardId, +amount, receipt)}
+        className="mt-6 w-full h-12 rounded-2xl gradient-peach text-white font-semibold shadow-soft disabled:opacity-40 active:scale-[.99]"
+      >
+        Save transaction
+      </button>
+      <p className="text-[11px] text-muted-foreground mt-2 text-center">
+        Receipt is stored on this device for future returns.
+      </p>
+    </div>
+  );
+}
+
+
 
 function FauxBarcode({ value }: { value: string }) {
   const bars = useMemo(() => {
