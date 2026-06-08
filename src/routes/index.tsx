@@ -703,15 +703,35 @@ function ExpiryPill({ days }: { days: number }) {
 
 /* ---------- Detail ---------- */
 function Detail({
-  card, onBack, onSpend, onDelete,
+  card, txs, onBack, onSpend, onDelete,
 }: {
   card: SpendyCard;
+  txs: Transaction[];
   onBack: () => void;
-  onSpend: (n: number) => void;
+  onSpend: (amount: number, receiptDataUrl?: string, note?: string) => void;
   onDelete: () => void;
 }) {
   const days = daysUntil(card.expiresAt);
   const [amount, setAmount] = useState("");
+  const [receipt, setReceipt] = useState<string | undefined>(undefined);
+  const [viewReceipt, setViewReceipt] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const onPickFile = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setReceipt(typeof reader.result === "string" ? reader.result : undefined);
+    reader.readAsDataURL(file);
+  };
+
+  const submit = () => {
+    const n = +amount;
+    if (!n || n <= 0) return;
+    onSpend(n, receipt);
+    setAmount(""); setReceipt(undefined);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
   return (
     <div className="px-5">
       <div className="flex items-center justify-between">
@@ -766,7 +786,7 @@ function Detail({
           </div>
           <button
             disabled={!amount || +amount <= 0}
-            onClick={() => { onSpend(+amount); setAmount(""); }}
+            onClick={submit}
             className="h-11 px-5 rounded-xl gradient-peach text-white text-sm font-semibold disabled:opacity-40 active:scale-[.99]"
           >
             Spend
@@ -781,11 +801,210 @@ function Detail({
             >${q}</button>
           ))}
         </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => onPickFile(e.target.files?.[0])}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="mt-3 w-full h-10 rounded-xl bg-secondary text-sm font-medium flex items-center justify-center gap-2 active:scale-[.99]"
+        >
+          <span>📷</span>
+          {receipt ? "Receipt attached — retake" : "Attach receipt photo"}
+        </button>
+        {receipt && (
+          <div className="mt-3 flex items-center gap-3">
+            <img src={receipt} alt="Receipt preview" className="h-16 w-16 rounded-lg object-cover border border-border" />
+            <button
+              onClick={() => setReceipt(undefined)}
+              className="text-xs text-muted-foreground underline underline-offset-2"
+            >Remove</button>
+          </div>
+        )}
         {card.note && <p className="text-[11px] text-muted-foreground mt-3">{card.note}</p>}
       </div>
+
+      <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+        <p className="text-sm font-semibold mb-2">Transactions</p>
+        {txs.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground">
+            No purchases logged yet. Spend the card or snap a receipt — it'll show up here.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {txs.map((t) => (
+              <TxRow key={t.id} tx={t} onReceipt={(url) => setViewReceipt(url)} />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {viewReceipt && (
+        <div
+          onClick={() => setViewReceipt(null)}
+          className="fixed inset-0 z-50 bg-black/80 grid place-items-center p-6"
+        >
+          <img src={viewReceipt} alt="Receipt" className="max-h-full max-w-full rounded-xl shadow-card" />
+        </div>
+      )}
     </div>
   );
 }
+
+/* ---------- Transaction row + Snap receipt ---------- */
+function TxRow({ tx, onReceipt }: { tx: Transaction; onReceipt?: (url: string) => void }) {
+  return (
+    <li className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border">
+      <button
+        onClick={() => tx.receiptDataUrl && onReceipt?.(tx.receiptDataUrl)}
+        disabled={!tx.receiptDataUrl}
+        className="h-10 w-10 rounded-lg bg-secondary grid place-items-center overflow-hidden shrink-0 disabled:cursor-default"
+        aria-label="View receipt"
+      >
+        {tx.receiptDataUrl
+          ? <img src={tx.receiptDataUrl} alt="" className="h-full w-full object-cover" />
+          : <span className="text-base">🧾</span>}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold truncate">{tx.brand}</p>
+          <p className="font-display text-base">-{formatMoney(tx.amount, tx.currency)}</p>
+        </div>
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-0.5">
+          <span className="truncate">
+            {formatWhen(tx.createdAt)}{tx.location ? ` · ${tx.location}` : ""}
+          </span>
+          {tx.receiptDataUrl && <span className="text-coral">Receipt saved</span>}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function SnapReceipt({
+  cards, onCancel, onSave,
+}: {
+  cards: SpendyCard[];
+  onCancel: () => void;
+  onSave: (cardId: string, amount: number, dataUrl: string | undefined, note?: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [receipt, setReceipt] = useState<string | undefined>(undefined);
+  const [cardId, setCardId] = useState<string>(cards[0]?.id ?? "");
+  const [amount, setAmount] = useState("");
+
+  useEffect(() => {
+    // Auto-prompt camera on mount for that "just finished shopping" flow.
+    const t = setTimeout(() => fileRef.current?.click(), 200);
+    return () => clearTimeout(t);
+  }, []);
+
+  const onPickFile = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setReceipt(typeof reader.result === "string" ? reader.result : undefined);
+    reader.readAsDataURL(file);
+  };
+
+  const valid = cardId && +amount > 0;
+
+  return (
+    <div className="px-5">
+      <div className="flex items-center justify-between">
+        <button onClick={onCancel} className="text-sm text-muted-foreground">← Back</button>
+        <p className="font-display text-xl">Snap receipt</p>
+        <span className="w-10" />
+      </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => onPickFile(e.target.files?.[0])}
+      />
+
+      <button
+        onClick={() => fileRef.current?.click()}
+        className="mt-5 w-full aspect-[4/3] rounded-3xl bg-card border border-dashed border-border grid place-items-center text-center overflow-hidden shadow-soft active:scale-[.99] transition"
+      >
+        {receipt ? (
+          <img src={receipt} alt="Receipt" className="h-full w-full object-cover" />
+        ) : (
+          <div>
+            <div className="text-4xl">📷</div>
+            <p className="text-sm font-semibold mt-2">Tap to open camera</p>
+            <p className="text-[11px] text-muted-foreground mt-1 px-8">
+              We'll save it as proof of purchase for returns or refunds.
+            </p>
+          </div>
+        )}
+      </button>
+
+      <div className="mt-5 space-y-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Paid with</p>
+          {cards.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Add a card first.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-2 max-h-44 overflow-y-auto">
+              {cards.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setCardId(c.id)}
+                  className={`flex items-center gap-3 p-2 rounded-xl border text-left transition ${
+                    cardId === c.id ? "border-coral bg-accent/30" : "border-border bg-card"
+                  }`}
+                >
+                  <div className="h-9 w-12 rounded-lg grid place-items-center text-base" style={{ background: c.color }}>
+                    <span>{c.emoji}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{c.brand}</p>
+                    <p className="text-[11px] text-muted-foreground">{formatMoney(c.balance, c.currency)} left</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Amount spent</p>
+          <div className="flex items-center rounded-xl bg-secondary px-3">
+            <span className="text-muted-foreground mr-1">$</span>
+            <input
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+              placeholder="0.00"
+              className="bg-transparent h-11 w-full outline-none text-base"
+            />
+          </div>
+        </div>
+      </div>
+
+      <button
+        disabled={!valid}
+        onClick={() => onSave(cardId, +amount, receipt)}
+        className="mt-6 w-full h-12 rounded-2xl gradient-peach text-white font-semibold shadow-soft disabled:opacity-40 active:scale-[.99]"
+      >
+        Save transaction
+      </button>
+      <p className="text-[11px] text-muted-foreground mt-2 text-center">
+        Receipt is stored on this device for future returns.
+      </p>
+    </div>
+  );
+}
+
+
 
 function FauxBarcode({ value }: { value: string }) {
   const bars = useMemo(() => {
