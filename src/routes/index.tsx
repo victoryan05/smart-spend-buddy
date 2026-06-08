@@ -34,7 +34,9 @@ type Screen =
   | { name: "pick" }                       // choose-brand list
   | { name: "scan"; brand: Brand }         // camera viewfinder
   | { name: "add"; brand?: Brand; code?: string }
-  | { name: "expiring" };
+  | { name: "expiring" }
+  | { name: "receipt" };                   // snap-receipt flow
+
 
 function Index() {
   const [cards, setCards] = useState<SpendyCard[]>([]);
