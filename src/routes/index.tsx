@@ -123,17 +123,24 @@ function Index() {
             {screen.name === "tab" && screen.tab === "home" && (
               <Home
                 cards={cards}
+                txs={txs}
                 onOpen={(id) => setScreen({ name: "detail", id })}
                 onAdd={openAdd}
                 onExpiring={() => setScreen({ name: "expiring" })}
                 onCatalogues={() => goTab("catalogues")}
+                onSnapReceipt={() => setScreen({ name: "receipt" })}
                 nudgeDismissed={nudgeDismissed}
                 onDismissNudge={() => setNudgeDismissed(true)}
+                centre={centre}
+                locStatus={locStatus}
+                onEnableLocation={enableLocation}
+                onSimulateCentre={simulateCentre}
               />
             )}
             {screen.name === "tab" && screen.tab === "wallet" && (
               <Wallet
                 cards={cards}
+                txs={txs}
                 onOpen={(id) => setScreen({ name: "detail", id })}
                 onAdd={openAdd}
               />
@@ -141,7 +148,13 @@ function Index() {
             {screen.name === "tab" && screen.tab === "catalogues" && (
               <Catalogues />
             )}
-            {screen.name === "tab" && screen.tab === "more" && <More />}
+            {screen.name === "tab" && screen.tab === "more" && (
+              <More
+                locStatus={locStatus}
+                onEnableLocation={enableLocation}
+                onSimulateCentre={simulateCentre}
+              />
+            )}
 
             {screen.name === "detail" && (() => {
               const card = cards.find((c) => c.id === screen.id);
@@ -149,16 +162,13 @@ function Index() {
               return (
                 <Detail
                   card={card}
+                  txs={txs.filter((t) => t.cardId === card.id)}
                   onBack={() => setScreen({ name: "tab", tab: "wallet" })}
-                  onSpend={(amount) =>
-                    update((cs) => cs.map((c) =>
-                      c.id === card.id
-                        ? { ...c, balance: Math.max(0, +(c.balance - amount).toFixed(2)) }
-                        : c
-                    ))
+                  onSpend={(amount, receiptDataUrl, note) =>
+                    recordTransaction(card.id, amount, receiptDataUrl, note)
                   }
                   onDelete={() => {
-                    update((cs) => cs.filter((c) => c.id !== card.id));
+                    setCards((cs) => cs.filter((c) => c.id !== card.id));
                     setScreen({ name: "tab", tab: "wallet" });
                   }}
                 />
@@ -187,7 +197,7 @@ function Index() {
                 presetBrand={screen.brand}
                 presetCode={screen.code}
                 onCancel={() => setScreen({ name: "pick" })}
-                onSave={(c) => { update((cs) => [c, ...cs]); setScreen({ name: "tab", tab: "wallet" }); }}
+                onSave={(c) => { setCards((cs) => [c, ...cs]); setScreen({ name: "tab", tab: "wallet" }); }}
               />
             )}
 
@@ -198,6 +208,18 @@ function Index() {
                 onOpen={(id) => setScreen({ name: "detail", id })}
               />
             )}
+
+            {screen.name === "receipt" && (
+              <SnapReceipt
+                cards={cards}
+                onCancel={() => setScreen({ name: "tab", tab: "home" })}
+                onSave={(cardId, amount, dataUrl, note) => {
+                  recordTransaction(cardId, amount, dataUrl, note);
+                  setScreen({ name: "tab", tab: "wallet" });
+                }}
+              />
+            )}
+
           </div>
 
           <BottomNav
