@@ -496,8 +496,9 @@ function Home({
 
 /* ---------- Wallet tab ---------- */
 function Wallet({
-  cards, onOpen, onAdd,
-}: { cards: SpendyCard[]; onOpen: (id: string) => void; onAdd: () => void }) {
+  cards, txs, onOpen, onAdd,
+}: { cards: SpendyCard[]; txs: Transaction[]; onOpen: (id: string) => void; onAdd: () => void }) {
+  const [tab, setTab] = useState<"cards" | "activity">("cards");
   return (
     <div className="px-5">
       <div className="flex items-center justify-between">
@@ -510,23 +511,46 @@ function Wallet({
         </button>
       </div>
       <p className="text-sm text-muted-foreground mt-1">
-        {cards.length} card{cards.length === 1 ? "" : "s"} & codes
+        {cards.length} card{cards.length === 1 ? "" : "s"} · {txs.length} transaction{txs.length === 1 ? "" : "s"}
       </p>
 
-      {cards.length === 0 ? (
-        <div className="mt-6"><EmptyState onAdd={onAdd} /></div>
+      <div className="mt-4 flex bg-secondary rounded-full p-1 text-xs font-semibold">
+        {(["cards", "activity"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 h-8 rounded-full capitalize transition ${
+              tab === t ? "bg-card shadow-soft" : "text-muted-foreground"
+            }`}
+          >{t}</button>
+        ))}
+      </div>
+
+      {tab === "cards" ? (
+        cards.length === 0 ? (
+          <div className="mt-6"><EmptyState onAdd={onAdd} /></div>
+        ) : (
+          <ul className="mt-5 space-y-3">
+            {cards.map((c) => (
+              <li key={c.id}>
+                <CardRow card={c} onClick={() => onOpen(c.id)} />
+              </li>
+            ))}
+          </ul>
+        )
+      ) : txs.length === 0 ? (
+        <div className="mt-6 rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          No transactions yet. Snap a receipt after your next shop.
+        </div>
       ) : (
-        <ul className="mt-5 space-y-3">
-          {cards.map((c) => (
-            <li key={c.id}>
-              <CardRow card={c} onClick={() => onOpen(c.id)} />
-            </li>
-          ))}
+        <ul className="mt-5 space-y-2">
+          {txs.map((t) => <TxRow key={t.id} tx={t} />)}
         </ul>
       )}
     </div>
   );
 }
+
 
 /* ---------- Catalogues tab ---------- */
 function Catalogues() {
