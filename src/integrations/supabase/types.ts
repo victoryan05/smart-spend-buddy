@@ -14,7 +14,86 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      receipt_items: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          price: number | null
+          qty: number | null
+          transaction_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          price?: number | null
+          qty?: number | null
+          transaction_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          price?: number | null
+          qty?: number | null
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_items_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transactions: {
+        Row: {
+          amount: number
+          brand: string
+          card_id: string
+          created_at: string
+          currency: string
+          device_id: string
+          id: string
+          location: string | null
+          merchant: string | null
+          note: string | null
+          purchased_at: string | null
+          receipt_path: string | null
+        }
+        Insert: {
+          amount: number
+          brand: string
+          card_id: string
+          created_at?: string
+          currency?: string
+          device_id: string
+          id?: string
+          location?: string | null
+          merchant?: string | null
+          note?: string | null
+          purchased_at?: string | null
+          receipt_path?: string | null
+        }
+        Update: {
+          amount?: number
+          brand?: string
+          card_id?: string
+          created_at?: string
+          currency?: string
+          device_id?: string
+          id?: string
+          location?: string | null
+          merchant?: string | null
+          note?: string | null
+          purchased_at?: string | null
+          receipt_path?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
