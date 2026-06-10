@@ -10,33 +10,43 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiPublicParseReceiptRouteImport } from './routes/api/public/parse-receipt'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicParseReceiptRoute = ApiPublicParseReceiptRouteImport.update({
+  id: '/api/public/parse-receipt',
+  path: '/api/public/parse-receipt',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/public/parse-receipt': typeof ApiPublicParseReceiptRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/public/parse-receipt': typeof ApiPublicParseReceiptRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/public/parse-receipt': typeof ApiPublicParseReceiptRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/public/parse-receipt'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/public/parse-receipt'
+  id: '__root__' | '/' | '/api/public/parse-receipt'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiPublicParseReceiptRoute: typeof ApiPublicParseReceiptRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +58,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/parse-receipt': {
+      id: '/api/public/parse-receipt'
+      path: '/api/public/parse-receipt'
+      fullPath: '/api/public/parse-receipt'
+      preLoaderRoute: typeof ApiPublicParseReceiptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiPublicParseReceiptRoute: ApiPublicParseReceiptRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
