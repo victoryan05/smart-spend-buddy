@@ -1129,13 +1129,22 @@ function PickBrand({
   onCancel, onPick, onManual,
 }: { onCancel: () => void; onPick: (b: Brand) => void; onManual: () => void }) {
   const [q, setQ] = useState("");
+  const sorted = useMemo(() => [...BRANDS].sort((a, b) => a.name.localeCompare(b.name)), []);
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return null;
-    return BRANDS.filter((b) => b.name.toLowerCase().includes(s));
-  }, [q]);
-  const popular = BRANDS.filter((b) => b.popular);
-  const others = BRANDS.filter((b) => !b.popular);
+    if (!s) return sorted;
+    return sorted.filter((b) => b.name.toLowerCase().includes(s));
+  }, [q, sorted]);
+
+  // Group A-Z for a clean address-book feel.
+  const groups = useMemo(() => {
+    const g: Record<string, Brand[]> = {};
+    for (const b of filtered) {
+      const letter = b.name[0].toUpperCase();
+      (g[letter] ||= []).push(b);
+    }
+    return Object.entries(g).sort(([a], [b]) => a.localeCompare(b));
+  }, [filtered]);
 
   return (
     <div className="px-5">
@@ -1155,13 +1164,28 @@ function PickBrand({
         />
       </div>
 
-      {filtered ? (
-        <BrandList brands={filtered} onPick={onPick} title="Results" />
+      {groups.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center mt-8">No matches.</p>
       ) : (
-        <>
-          <BrandList brands={popular} onPick={onPick} title="Popular cards" />
-          <BrandList brands={others} onPick={onPick} title="More brands" />
-        </>
+        groups.map(([letter, brands]) => (
+          <div key={letter}>
+            <h2 className="font-display text-xs uppercase tracking-wider text-muted-foreground mt-5 mb-1.5 px-1">{letter}</h2>
+            <ul className="rounded-2xl bg-card border border-border overflow-hidden">
+              {brands.map((b, i) => (
+                <li key={b.name}>
+                  <button
+                    onClick={() => onPick(b)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-left active:bg-secondary/70 transition ${i ? "border-t border-border" : ""}`}
+                  >
+                    <BrandLogo brand={b} />
+                    <span className="flex-1 font-medium text-[15px]">{b.name}</span>
+                    <span className="text-muted-foreground">›</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
       )}
 
       <button
@@ -1171,31 +1195,6 @@ function PickBrand({
         Can't find it? Add manually
       </button>
     </div>
-  );
-}
-
-function BrandList({
-  brands, onPick, title,
-}: { brands: Brand[]; onPick: (b: Brand) => void; title: string }) {
-  if (!brands.length) return null;
-  return (
-    <>
-      <h2 className="font-display text-2xl mt-5 mb-2">{title}</h2>
-      <ul className="rounded-2xl bg-card border border-border overflow-hidden">
-        {brands.map((b, i) => (
-          <li key={b.name}>
-            <button
-              onClick={() => onPick(b)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left active:bg-secondary/70 transition ${i ? "border-t border-border" : ""}`}
-            >
-              <BrandLogo brand={b} />
-              <span className="flex-1 font-medium text-[15px]">{b.name}</span>
-              <span className="text-muted-foreground">›</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </>
   );
 }
 
