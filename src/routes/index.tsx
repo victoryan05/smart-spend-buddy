@@ -483,6 +483,19 @@ function Home({
         <span className="text-coral">→</span>
       </button>
 
+      <button
+        onClick={onInbox}
+        className="mt-3 w-full flex items-center gap-3 rounded-2xl bg-card border border-border p-4 shadow-soft active:scale-[.99] transition text-left"
+      >
+        <div className="h-10 w-10 rounded-full bg-coral/15 grid place-items-center text-lg shrink-0">✉️</div>
+        <div className="flex-1">
+          <p className="text-[13px] font-semibold">Got an e-gift card or email receipt?</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+            Forward it to your Spendy inbox — we'll add it automatically.
+          </p>
+        </div>
+        <span className="text-coral">→</span>
+
       {expiringSoon.length > 0 && (
         <button
           onClick={onExpiring}
