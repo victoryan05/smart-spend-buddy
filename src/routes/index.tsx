@@ -1365,18 +1365,23 @@ function rand(n: number) {
 
 /* ---------- Add card ---------- */
 function AddCard({
-  onCancel, onSave, presetBrand, presetCode,
+  onCancel, onSave, presetBrand, presetCode, preset,
 }: {
   onCancel: () => void;
   onSave: (c: SpendyCard) => void;
   presetBrand?: Brand;
   presetCode?: string;
+  preset?: Partial<SpendyCard>;
 }) {
-  const [brand, setBrand] = useState(presetBrand?.name ?? "");
-  const [balance, setBalance] = useState("");
-  const [code, setCode] = useState(presetCode ?? "");
-  const [kind, setKind] = useState<CardKind>("gift");
-  const [days, setDays] = useState("90");
+  const defaultExpiry = useMemo(() => {
+    const base = preset?.expiresAt ? new Date(preset.expiresAt) : new Date(Date.now() + 90 * 86400000);
+    return base.toISOString().slice(0, 10);
+  }, [preset?.expiresAt]);
+  const [brand, setBrand] = useState(preset?.brand ?? presetBrand?.name ?? "");
+  const [balance, setBalance] = useState(preset?.balance != null ? String(preset.balance) : "");
+  const [code, setCode] = useState(preset?.code ?? presetCode ?? "");
+  const [kind, setKind] = useState<CardKind>(preset?.kind ?? "gift");
+  const [expiryDate, setExpiryDate] = useState(defaultExpiry);
 
   const palette = [
     "linear-gradient(135deg,#ff8a5c,#e85a32)",
