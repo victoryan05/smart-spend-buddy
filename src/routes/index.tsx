@@ -165,6 +165,7 @@ function Index() {
                 onExpiring={() => setScreen({ name: "expiring" })}
                 onCatalogues={() => goTab("catalogues")}
                 onSnapReceipt={() => setScreen({ name: "receipt" })}
+                onInbox={() => setScreen({ name: "inbox" })}
                 nudgeDismissed={nudgeDismissed}
                 onDismissNudge={() => setNudgeDismissed(true)}
                 centre={centre}
