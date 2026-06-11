@@ -208,3 +208,4 @@ export function fileToBase64(file: Blob): Promise<string> {
     r.readAsDataURL(file);
   });
 }
+}
