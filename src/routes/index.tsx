@@ -188,6 +188,7 @@ function Index() {
                 locStatus={locStatus}
                 onEnableLocation={enableLocation}
                 onSimulateCentre={simulateCentre}
+                onInbox={() => setScreen({ name: "inbox" })}
               />
             )}
 
