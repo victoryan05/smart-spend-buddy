@@ -1445,16 +1445,13 @@ function AddCard({
               />
             </div>
           </Field>
-          <Field label="Expires in">
-            <div className="flex items-center w-full">
-              <input
-                inputMode="numeric"
-                value={days}
-                onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))}
-                className="bg-transparent h-11 w-full outline-none"
-              />
-              <span className="text-muted-foreground ml-1 text-sm">days</span>
-            </div>
+          <Field label="Expiry date">
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="bg-transparent h-11 w-full outline-none text-sm"
+            />
           </Field>
         </div>
 
