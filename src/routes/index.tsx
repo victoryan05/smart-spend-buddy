@@ -375,7 +375,7 @@ function NavBtn({
 
 /* ---------- Home ---------- */
 function Home({
-  cards, txs, onOpen, onAdd, onExpiring, onCatalogues, onSnapReceipt,
+  cards, txs, onOpen, onAdd, onExpiring, onCatalogues, onSnapReceipt, onInbox,
   nudgeDismissed, onDismissNudge,
   centre, locStatus, onEnableLocation, onSimulateCentre,
 }: {
@@ -386,6 +386,7 @@ function Home({
   onExpiring: () => void;
   onCatalogues: () => void;
   onSnapReceipt: () => void;
+  onInbox: () => void;
   nudgeDismissed: boolean;
   onDismissNudge: () => void;
   centre: ShoppingCentre | null;
