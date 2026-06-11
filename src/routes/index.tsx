@@ -8,8 +8,8 @@ import {
   type SpendyCard, type CardKind,
 } from "@/lib/spendy-data";
 import {
-  fetchTransactions, insertTransaction, uploadReceipt, parseReceipt,
-  getReceiptSignedUrl, fileToBase64, deleteTransaction,
+  fetchTransactions, insertTransaction, uploadReceipt, parseReceipt, parseEmail,
+  getReceiptSignedUrl, fileToBase64, deleteTransaction, getForwardingAddress,
   type DbTransaction, type ParsedReceipt,
 } from "@/lib/spendy-db";
 import {
@@ -35,9 +35,10 @@ type Screen =
   | { name: "detail"; id: string }
   | { name: "pick" }
   | { name: "scan"; brand: Brand }
-  | { name: "add"; brand?: Brand; code?: string }
+  | { name: "add"; brand?: Brand; code?: string; preset?: Partial<SpendyCard> }
   | { name: "expiring" }
-  | { name: "receipt" };
+  | { name: "receipt" }
+  | { name: "inbox" };
 
 function formatWhen(iso: string) {
   const d = new Date(iso);
@@ -164,6 +165,7 @@ function Index() {
                 onExpiring={() => setScreen({ name: "expiring" })}
                 onCatalogues={() => goTab("catalogues")}
                 onSnapReceipt={() => setScreen({ name: "receipt" })}
+                onInbox={() => setScreen({ name: "inbox" })}
                 nudgeDismissed={nudgeDismissed}
                 onDismissNudge={() => setNudgeDismissed(true)}
                 centre={centre}
@@ -186,6 +188,7 @@ function Index() {
                 locStatus={locStatus}
                 onEnableLocation={enableLocation}
                 onSimulateCentre={simulateCentre}
+                onInbox={() => setScreen({ name: "inbox" })}
               />
             )}
 
@@ -236,6 +239,7 @@ function Index() {
               <AddCard
                 presetBrand={screen.brand}
                 presetCode={screen.code}
+                preset={screen.preset}
                 onCancel={() => setScreen({ name: "pick" })}
                 onSave={(c) => { setCards((cs) => [c, ...cs]); setScreen({ name: "tab", tab: "wallet" }); }}
               />
@@ -255,6 +259,31 @@ function Index() {
                 onCancel={() => setScreen({ name: "tab", tab: "home" })}
                 onDone={async (cardId, file, parsed, amountOverride) => {
                   await logReceiptSpend(cardId, file, parsed, amountOverride);
+                  setScreen({ name: "tab", tab: "wallet" });
+                }}
+              />
+            )}
+
+            {screen.name === "inbox" && (
+              <Inbox
+                cards={cards}
+                onCancel={() => setScreen({ name: "tab", tab: "home" })}
+                onAddCard={(preset) => setScreen({ name: "add", preset })}
+                onAddTx={async (cardId, parsed) => {
+                  const card = cards.find((c) => c.id === cardId);
+                  if (!card || !parsed?.total) return;
+                  setCards((cs) => cs.map((c) =>
+                    c.id === cardId ? { ...c, balance: Math.max(0, +(c.balance - (parsed.total ?? 0)).toFixed(2)) } : c,
+                  ));
+                  await insertTransaction({
+                    cardId, brand: card.brand, amount: parsed.total, currency: card.currency,
+                    location: centre?.name ?? null,
+                    merchant: parsed.merchant ?? null,
+                    purchased_at: parsed.purchased_at ?? null,
+                    items: parsed.items ?? [],
+                    note: "From forwarded email",
+                  });
+                  await refreshTxs();
                   setScreen({ name: "tab", tab: "wallet" });
                 }}
               />
@@ -346,7 +375,7 @@ function NavBtn({
 
 /* ---------- Home ---------- */
 function Home({
-  cards, txs, onOpen, onAdd, onExpiring, onCatalogues, onSnapReceipt,
+  cards, txs, onOpen, onAdd, onExpiring, onCatalogues, onSnapReceipt, onInbox,
   nudgeDismissed, onDismissNudge,
   centre, locStatus, onEnableLocation, onSimulateCentre,
 }: {
@@ -357,6 +386,7 @@ function Home({
   onExpiring: () => void;
   onCatalogues: () => void;
   onSnapReceipt: () => void;
+  onInbox: () => void;
   nudgeDismissed: boolean;
   onDismissNudge: () => void;
   centre: ShoppingCentre | null;
@@ -452,6 +482,22 @@ function Home({
         </div>
         <span className="text-coral">→</span>
       </button>
+
+      <button
+        onClick={onInbox}
+        className="mt-3 w-full flex items-center gap-3 rounded-2xl bg-card border border-border p-4 shadow-soft active:scale-[.99] transition text-left"
+      >
+        <div className="h-10 w-10 rounded-full bg-coral/15 grid place-items-center text-lg shrink-0">✉️</div>
+        <div className="flex-1">
+          <p className="text-[13px] font-semibold">Got an e-gift card or email receipt?</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+            Forward it to your Spendy inbox — we'll add it automatically.
+          </p>
+        </div>
+        <span className="text-coral">→</span>
+      </button>
+
+
 
       {expiringSoon.length > 0 && (
         <button
@@ -597,17 +643,29 @@ function CatalogueTile({ c }: { c: typeof CATALOGUES[number] }) {
 
 /* ---------- More tab ---------- */
 function More({
-  locStatus, onEnableLocation, onSimulateCentre,
+  locStatus, onEnableLocation, onSimulateCentre, onInbox,
 }: {
   locStatus: "off" | "watching" | "denied";
   onEnableLocation: () => void;
   onSimulateCentre: () => void;
+  onInbox: () => void;
 }) {
   const statusLabel = locStatus === "watching" ? "On" : locStatus === "denied" ? "Blocked" : "Off";
+  const address = useMemo(() => getForwardingAddress(), []);
   return (
     <div className="px-5">
       <h1 className="font-display text-3xl">More</h1>
-      <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+
+      <button
+        onClick={onInbox}
+        className="mt-5 w-full text-left rounded-2xl gradient-peach text-white p-4 shadow-soft active:scale-[.99] transition"
+      >
+        <p className="text-[11px] uppercase tracking-wider opacity-80">Spendy inbox</p>
+        <p className="font-mono text-[13px] mt-1 break-all">{address}</p>
+        <p className="text-[11px] opacity-90 mt-2">Forward e-gift cards and email receipts here →</p>
+      </button>
+
+      <div className="mt-4 rounded-2xl bg-card border border-border p-4 shadow-soft">
         <div className="flex items-start gap-3">
           <span className="text-xl">📍</span>
           <div className="flex-1">
@@ -918,7 +976,6 @@ function SnapReceipt({
   const [preview, setPreview] = useState<string | null>(null);
   const [cardId, setCardId] = useState<string>(cards[0]?.id ?? "");
   const [parsed, setParsed] = useState<ParsedReceipt | null>(null);
-  const [amount, setAmount] = useState("");
   const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "saving" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -927,28 +984,27 @@ function SnapReceipt({
     setFile(f);
     setStatus("parsing");
     setError(null);
+    setParsed(null);
     const dataUrl = await fileToBase64(f);
     setPreview(dataUrl);
     const result = await parseReceipt(dataUrl);
-    if (!result) {
+    if (!result || result.total == null) {
+      setError("Couldn't read the total off this receipt. Try a clearer photo.");
       setStatus("error");
-      setError("Couldn't read this receipt. You can still set the amount manually.");
-      setStatus("ready");
       return;
     }
     setParsed(result);
-    if (result.total != null) setAmount(String(result.total));
     setStatus("ready");
   };
 
-  const effectiveAmount = +amount || parsed?.total || 0;
-  const canSave = !!cardId && !!file && effectiveAmount > 0 && status !== "saving" && status !== "parsing";
+  const effectiveAmount = parsed?.total ?? 0;
+  const canSave = !!cardId && !!file && effectiveAmount > 0 && status === "ready";
 
   const submit = async () => {
     if (!file || !cardId) return;
     setStatus("saving");
     try {
-      await onDone(cardId, file, parsed, +amount || undefined);
+      await onDone(cardId, file, parsed, undefined);
     } catch (e) {
       setStatus("error");
       setError(e instanceof Error ? e.message : "Couldn't save");
@@ -1049,22 +1105,17 @@ function SnapReceipt({
           )}
         </div>
 
-        <div>
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
-            Amount spent {parsed?.total != null ? <span className="text-muted-foreground">(AI: {formatMoney(parsed.total)})</span> : ""}
-          </p>
-          <div className="flex items-center rounded-xl bg-secondary px-3">
-            <span className="text-muted-foreground mr-1">$</span>
-            <input
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-              placeholder="0.00"
-              className="bg-transparent h-11 w-full outline-none text-base"
-            />
+        {parsed?.total != null && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Amount (read from receipt)</p>
+            <div className="flex items-center justify-between rounded-xl bg-secondary px-3 h-11">
+              <span className="text-sm text-muted-foreground">Total</span>
+              <span className="font-display text-xl">{formatMoney(parsed.total)}</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
+
 
       <button
         disabled={!canSave}
@@ -1098,18 +1149,217 @@ function FauxBarcode({ value }: { value: string }) {
   );
 }
 
+
+/* ---------- Inbox (forwarded emails) ---------- */
+function Inbox({
+  cards, onCancel, onAddCard, onAddTx,
+}: {
+  cards: SpendyCard[];
+  onCancel: () => void;
+  onAddCard: (preset: Partial<SpendyCard>) => void;
+  onAddTx: (cardId: string, parsed: ParsedReceipt) => Promise<void> | void;
+}) {
+  const address = useMemo(() => getForwardingAddress(), []);
+  const [copied, setCopied] = useState(false);
+  const [body, setBody] = useState("");
+  const [subject, setSubject] = useState("");
+  const [from, setFrom] = useState("");
+  const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "saving" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof parseEmail>>>(null);
+  const [cardId, setCardId] = useState<string>(cards[0]?.id ?? "");
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* */ }
+  };
+
+  const onEmlFile = async (f: File | undefined) => {
+    if (!f) return;
+    const text = await f.text();
+    setBody(text);
+  };
+
+  const process = async () => {
+    if (!body.trim()) return;
+    setStatus("parsing");
+    setError(null);
+    setResult(null);
+    const r = await parseEmail({ text: body, subject, from });
+    if (!r || r.kind === "unknown") {
+      setStatus("error");
+      setError("Couldn't tell if this is an e-gift card or a receipt. Try the original email body.");
+      return;
+    }
+    setResult(r);
+    setStatus("ready");
+  };
+
+  const saveGift = () => {
+    if (!result?.giftcard) return;
+    const g = result.giftcard;
+    onAddCard({
+      brand: g.brand,
+      balance: g.balance,
+      starting: g.balance,
+      currency: g.currency || "$",
+      code: [g.code, g.pin && `PIN ${g.pin}`].filter(Boolean).join(" · ") || "—",
+      kind: g.kind || "gift",
+      expiresAt: g.expires_at ?? new Date(Date.now() + 365 * 86400000).toISOString(),
+    });
+  };
+
+  const saveReceipt = async () => {
+    if (!result?.receipt || !cardId) return;
+    setStatus("saving");
+    try {
+      await onAddTx(cardId, result.receipt);
+    } catch (e) {
+      setStatus("error");
+      setError(e instanceof Error ? e.message : "Couldn't save");
+    }
+  };
+
+  return (
+    <div className="px-5 pb-8">
+      <div className="flex items-center justify-between">
+        <button onClick={onCancel} className="text-sm text-muted-foreground">← Back</button>
+        <p className="font-display text-xl">Inbox</p>
+        <span className="w-10" />
+      </div>
+
+      <div className="mt-4 rounded-2xl gradient-peach text-white p-4 shadow-soft">
+        <p className="text-[11px] uppercase tracking-wider opacity-80">Your Spendy forwarding address</p>
+        <p className="font-mono text-[15px] mt-1 break-all">{address}</p>
+        <p className="text-[12px] opacity-90 mt-2 leading-snug">
+          Forward any e-gift card or receipt email to this address and Spendy will add it for you automatically.
+        </p>
+        <button onClick={copy} className="mt-3 h-9 px-3 rounded-xl bg-white text-coral text-xs font-semibold">
+          {copied ? "Copied ✓" : "Copy address"}
+        </button>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Or paste an email here</p>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="From (optional)" className="bg-secondary rounded-xl px-3 h-10 text-sm outline-none" />
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject (optional)" className="bg-secondary rounded-xl px-3 h-10 text-sm outline-none" />
+        </div>
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Paste the full email body — Spendy will work out if it's a gift card or a receipt."
+          className="w-full min-h-[140px] bg-secondary rounded-xl p-3 text-sm outline-none resize-y"
+        />
+        <div className="flex gap-2 mt-2">
+          <label className="flex-1 h-10 rounded-xl bg-card border border-border text-xs grid place-items-center cursor-pointer">
+            Upload .eml file
+            <input type="file" accept=".eml,message/rfc822,text/plain,text/html" className="hidden" onChange={(e) => onEmlFile(e.target.files?.[0])} />
+          </label>
+          <button
+            onClick={process}
+            disabled={!body.trim() || status === "parsing"}
+            className="flex-1 h-10 rounded-xl gradient-peach text-white text-xs font-semibold disabled:opacity-40"
+          >
+            {status === "parsing" ? "Reading…" : "Process email"}
+          </button>
+        </div>
+        {error && <p className="text-[12px] text-destructive mt-2">{error}</p>}
+      </div>
+
+      {result?.kind === "giftcard" && result.giftcard && (
+        <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">E-gift card detected</p>
+          <p className="font-display text-xl mt-1">{result.giftcard.brand}</p>
+          <p className="text-sm text-muted-foreground">Balance · <span className="text-foreground font-semibold">{formatMoney(result.giftcard.balance, result.giftcard.currency || "$")}</span></p>
+          <p className="text-[12px] font-mono mt-1 break-all">{result.giftcard.code}{result.giftcard.pin ? ` · PIN ${result.giftcard.pin}` : ""}</p>
+          {result.giftcard.expires_at && (
+            <p className="text-[11px] text-muted-foreground mt-0.5">Expires {new Date(result.giftcard.expires_at).toLocaleDateString()}</p>
+          )}
+          <button onClick={saveGift} className="mt-3 w-full h-11 rounded-xl gradient-peach text-white text-sm font-semibold">
+            Add to wallet
+          </button>
+        </div>
+      )}
+
+      {result?.kind === "receipt" && result.receipt && (
+        <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Receipt detected</p>
+          <div className="flex items-baseline justify-between mt-1">
+            <p className="font-display text-lg truncate">{result.receipt.merchant ?? "Receipt"}</p>
+            <p className="font-display text-xl">{result.receipt.total != null ? formatMoney(result.receipt.total) : "—"}</p>
+          </div>
+          {result.receipt.purchased_at && (
+            <p className="text-[11px] text-muted-foreground">{new Date(result.receipt.purchased_at).toLocaleString()}</p>
+          )}
+          {result.receipt.items?.length > 0 && (
+            <ul className="mt-2 max-h-32 overflow-y-auto text-[12px]">
+              {result.receipt.items.slice(0, 8).map((it, i) => (
+                <li key={i} className="flex justify-between py-0.5">
+                  <span className="truncate pr-3">{it.name}</span>
+                  <span className="font-mono">{it.price != null ? formatMoney(it.price) : ""}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mt-3 mb-1">Paid with</p>
+          {cards.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Add a card first.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto">
+              {cards.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setCardId(c.id)}
+                  className={`flex items-center gap-3 p-2 rounded-xl border text-left transition ${cardId === c.id ? "border-coral bg-accent/30" : "border-border bg-card"}`}
+                >
+                  <div className="h-8 w-10 rounded-lg grid place-items-center text-sm" style={{ background: c.color }}><span>{c.emoji}</span></div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{c.brand}</p>
+                    <p className="text-[11px] text-muted-foreground">{formatMoney(c.balance, c.currency)} left</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={saveReceipt}
+            disabled={!cardId || !result.receipt.total || status === "saving"}
+            className="mt-3 w-full h-11 rounded-xl gradient-peach text-white text-sm font-semibold disabled:opacity-40"
+          >
+            {status === "saving" ? "Saving…" : "Save transaction"}
+          </button>
+        </div>
+      )}
+
+      <div className="mt-6 rounded-2xl border border-dashed border-border bg-card/40 p-3 text-[11px] text-muted-foreground leading-snug">
+        Powered by Mailgun Routes (placeholder). When wired up, emails sent to your forwarding address are received by a webhook, parsed with AI, and added to your wallet automatically.
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Brand picker ---------- */
+
 function PickBrand({
   onCancel, onPick, onManual,
 }: { onCancel: () => void; onPick: (b: Brand) => void; onManual: () => void }) {
   const [q, setQ] = useState("");
+  const sorted = useMemo(() => [...BRANDS].sort((a, b) => a.name.localeCompare(b.name)), []);
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return null;
-    return BRANDS.filter((b) => b.name.toLowerCase().includes(s));
-  }, [q]);
-  const popular = BRANDS.filter((b) => b.popular);
-  const others = BRANDS.filter((b) => !b.popular);
+    if (!s) return sorted;
+    return sorted.filter((b) => b.name.toLowerCase().includes(s));
+  }, [q, sorted]);
+
+  // Group A-Z for a clean address-book feel.
+  const groups = useMemo(() => {
+    const g: Record<string, Brand[]> = {};
+    for (const b of filtered) {
+      const letter = b.name[0].toUpperCase();
+      (g[letter] ||= []).push(b);
+    }
+    return Object.entries(g).sort(([a], [b]) => a.localeCompare(b));
+  }, [filtered]);
 
   return (
     <div className="px-5">
@@ -1129,13 +1379,28 @@ function PickBrand({
         />
       </div>
 
-      {filtered ? (
-        <BrandList brands={filtered} onPick={onPick} title="Results" />
+      {groups.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center mt-8">No matches.</p>
       ) : (
-        <>
-          <BrandList brands={popular} onPick={onPick} title="Popular cards" />
-          <BrandList brands={others} onPick={onPick} title="More brands" />
-        </>
+        groups.map(([letter, brands]) => (
+          <div key={letter}>
+            <h2 className="font-display text-xs uppercase tracking-wider text-muted-foreground mt-5 mb-1.5 px-1">{letter}</h2>
+            <ul className="rounded-2xl bg-card border border-border overflow-hidden">
+              {brands.map((b, i) => (
+                <li key={b.name}>
+                  <button
+                    onClick={() => onPick(b)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-left active:bg-secondary/70 transition ${i ? "border-t border-border" : ""}`}
+                  >
+                    <BrandLogo brand={b} />
+                    <span className="flex-1 font-medium text-[15px]">{b.name}</span>
+                    <span className="text-muted-foreground">›</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
       )}
 
       <button
@@ -1145,31 +1410,6 @@ function PickBrand({
         Can't find it? Add manually
       </button>
     </div>
-  );
-}
-
-function BrandList({
-  brands, onPick, title,
-}: { brands: Brand[]; onPick: (b: Brand) => void; title: string }) {
-  if (!brands.length) return null;
-  return (
-    <>
-      <h2 className="font-display text-2xl mt-5 mb-2">{title}</h2>
-      <ul className="rounded-2xl bg-card border border-border overflow-hidden">
-        {brands.map((b, i) => (
-          <li key={b.name}>
-            <button
-              onClick={() => onPick(b)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left active:bg-secondary/70 transition ${i ? "border-t border-border" : ""}`}
-            >
-              <BrandLogo brand={b} />
-              <span className="flex-1 font-medium text-[15px]">{b.name}</span>
-              <span className="text-muted-foreground">›</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </>
   );
 }
 
@@ -1340,18 +1580,23 @@ function rand(n: number) {
 
 /* ---------- Add card ---------- */
 function AddCard({
-  onCancel, onSave, presetBrand, presetCode,
+  onCancel, onSave, presetBrand, presetCode, preset,
 }: {
   onCancel: () => void;
   onSave: (c: SpendyCard) => void;
   presetBrand?: Brand;
   presetCode?: string;
+  preset?: Partial<SpendyCard>;
 }) {
-  const [brand, setBrand] = useState(presetBrand?.name ?? "");
-  const [balance, setBalance] = useState("");
-  const [code, setCode] = useState(presetCode ?? "");
-  const [kind, setKind] = useState<CardKind>("gift");
-  const [days, setDays] = useState("90");
+  const defaultExpiry = useMemo(() => {
+    const base = preset?.expiresAt ? new Date(preset.expiresAt) : new Date(Date.now() + 90 * 86400000);
+    return base.toISOString().slice(0, 10);
+  }, [preset?.expiresAt]);
+  const [brand, setBrand] = useState(preset?.brand ?? presetBrand?.name ?? "");
+  const [balance, setBalance] = useState(preset?.balance != null ? String(preset.balance) : "");
+  const [code, setCode] = useState(preset?.code ?? presetCode ?? "");
+  const [kind, setKind] = useState<CardKind>(preset?.kind ?? "gift");
+  const [expiryDate, setExpiryDate] = useState(defaultExpiry);
 
   const palette = [
     "linear-gradient(135deg,#ff8a5c,#e85a32)",
@@ -1415,16 +1660,13 @@ function AddCard({
               />
             </div>
           </Field>
-          <Field label="Expires in">
-            <div className="flex items-center w-full">
-              <input
-                inputMode="numeric"
-                value={days}
-                onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))}
-                className="bg-transparent h-11 w-full outline-none"
-              />
-              <span className="text-muted-foreground ml-1 text-sm">days</span>
-            </div>
+          <Field label="Expiry date">
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="bg-transparent h-11 w-full outline-none text-sm"
+            />
           </Field>
         </div>
 
@@ -1493,7 +1735,7 @@ function AddCard({
             starting: +balance,
             currency: "$",
             code: code || "—",
-            expiresAt: new Date(Date.now() + (+days || 90) * 86400000).toISOString(),
+            expiresAt: (expiryDate ? new Date(expiryDate) : new Date(Date.now() + 90 * 86400000)).toISOString(),
             color,
           })
         }

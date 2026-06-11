@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiPublicParseReceiptRouteImport } from './routes/api/public/parse-receipt'
+import { Route as ApiPublicParseEmailRouteImport } from './routes/api/public/parse-email'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,30 +23,39 @@ const ApiPublicParseReceiptRoute = ApiPublicParseReceiptRouteImport.update({
   path: '/api/public/parse-receipt',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicParseEmailRoute = ApiPublicParseEmailRouteImport.update({
+  id: '/api/public/parse-email',
+  path: '/api/public/parse-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/public/parse-email': typeof ApiPublicParseEmailRoute
   '/api/public/parse-receipt': typeof ApiPublicParseReceiptRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/public/parse-email': typeof ApiPublicParseEmailRoute
   '/api/public/parse-receipt': typeof ApiPublicParseReceiptRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/public/parse-email': typeof ApiPublicParseEmailRoute
   '/api/public/parse-receipt': typeof ApiPublicParseReceiptRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/public/parse-receipt'
+  fullPaths: '/' | '/api/public/parse-email' | '/api/public/parse-receipt'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/public/parse-receipt'
-  id: '__root__' | '/' | '/api/public/parse-receipt'
+  to: '/' | '/api/public/parse-email' | '/api/public/parse-receipt'
+  id: '__root__' | '/' | '/api/public/parse-email' | '/api/public/parse-receipt'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiPublicParseEmailRoute: typeof ApiPublicParseEmailRoute
   ApiPublicParseReceiptRoute: typeof ApiPublicParseReceiptRoute
 }
 
@@ -65,23 +75,21 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicParseReceiptRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/parse-email': {
+      id: '/api/public/parse-email'
+      path: '/api/public/parse-email'
+      fullPath: '/api/public/parse-email'
+      preLoaderRoute: typeof ApiPublicParseEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiPublicParseEmailRoute: ApiPublicParseEmailRoute,
   ApiPublicParseReceiptRoute: ApiPublicParseReceiptRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
