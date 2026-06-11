@@ -138,6 +138,8 @@ export async function parseEmail(input: { text?: string; html?: string; subject?
     console.error("parseEmail error", e);
     return null;
   }
+}
+
 
 
 export async function insertTransaction(input: {
