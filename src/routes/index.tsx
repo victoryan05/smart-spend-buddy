@@ -237,6 +237,7 @@ function Index() {
               <AddCard
                 presetBrand={screen.brand}
                 presetCode={screen.code}
+                preset={screen.preset}
                 onCancel={() => setScreen({ name: "pick" })}
                 onSave={(c) => { setCards((cs) => [c, ...cs]); setScreen({ name: "tab", tab: "wallet" }); }}
               />
