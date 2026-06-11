@@ -1074,22 +1074,15 @@ function SnapReceipt({
           )}
         </div>
 
-        <div>
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
-            Amount spent {parsed?.total != null ? <span className="text-muted-foreground">(AI: {formatMoney(parsed.total)})</span> : ""}
-          </p>
-          <div className="flex items-center rounded-xl bg-secondary px-3">
-            <span className="text-muted-foreground mr-1">$</span>
-            <input
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-              placeholder="0.00"
-              className="bg-transparent h-11 w-full outline-none text-base"
-            />
+        {parsed?.total != null && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Amount (read from receipt)</p>
+            <div className="flex items-center justify-between rounded-xl bg-secondary px-3 h-11">
+              <span className="text-sm text-muted-foreground">Total</span>
+              <span className="font-display text-xl">{formatMoney(parsed.total)}</span>
+            </div>
           </div>
-        </div>
-      </div>
+        )}
 
       <button
         disabled={!canSave}
