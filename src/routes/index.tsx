@@ -1520,7 +1520,7 @@ function AddCard({
             starting: +balance,
             currency: "$",
             code: code || "—",
-            expiresAt: new Date(Date.now() + (+days || 90) * 86400000).toISOString(),
+            expiresAt: (expiryDate ? new Date(expiryDate) : new Date(Date.now() + 90 * 86400000)).toISOString(),
             color,
           })
         }
