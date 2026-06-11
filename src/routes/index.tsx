@@ -8,8 +8,8 @@ import {
   type SpendyCard, type CardKind,
 } from "@/lib/spendy-data";
 import {
-  fetchTransactions, insertTransaction, uploadReceipt, parseReceipt,
-  getReceiptSignedUrl, fileToBase64, deleteTransaction,
+  fetchTransactions, insertTransaction, uploadReceipt, parseReceipt, parseEmail,
+  getReceiptSignedUrl, fileToBase64, deleteTransaction, getForwardingAddress,
   type DbTransaction, type ParsedReceipt,
 } from "@/lib/spendy-db";
 import {
