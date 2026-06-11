@@ -12,6 +12,20 @@ export function getDeviceId(): string {
   return id;
 }
 
+// Stable, shareable forwarding address derived from the device id.
+// Real implementation would route through Mailgun Routes → webhook → DB lookup.
+export function getForwardingAddress(domain = "in.spendy.app"): string {
+  const id = getDeviceId().replace(/-/g, "").slice(0, 10);
+  return `u_${id}@${domain}`;
+}
+
+function __unused_keep_format() {
+  const id = "";
+    localStorage.setItem(DEVICE_KEY, id);
+  }
+  return id;
+}
+
 export interface DbReceiptItem {
   id: string;
   transaction_id: string;
