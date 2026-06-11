@@ -260,6 +260,31 @@ function Index() {
                 }}
               />
             )}
+
+            {screen.name === "inbox" && (
+              <Inbox
+                cards={cards}
+                onCancel={() => setScreen({ name: "tab", tab: "home" })}
+                onAddCard={(preset) => setScreen({ name: "add", preset })}
+                onAddTx={async (cardId, parsed) => {
+                  const card = cards.find((c) => c.id === cardId);
+                  if (!card || !parsed?.total) return;
+                  setCards((cs) => cs.map((c) =>
+                    c.id === cardId ? { ...c, balance: Math.max(0, +(c.balance - (parsed.total ?? 0)).toFixed(2)) } : c,
+                  ));
+                  await insertTransaction({
+                    cardId, brand: card.brand, amount: parsed.total, currency: card.currency,
+                    location: centre?.name ?? null,
+                    merchant: parsed.merchant ?? null,
+                    purchased_at: parsed.purchased_at ?? null,
+                    items: parsed.items ?? [],
+                    note: "From forwarded email",
+                  });
+                  await refreshTxs();
+                  setScreen({ name: "tab", tab: "wallet" });
+                }}
+              />
+            )}
           </div>
 
           <BottomNav
