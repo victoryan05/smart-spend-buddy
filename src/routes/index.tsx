@@ -35,9 +35,10 @@ type Screen =
   | { name: "detail"; id: string }
   | { name: "pick" }
   | { name: "scan"; brand: Brand }
-  | { name: "add"; brand?: Brand; code?: string }
+  | { name: "add"; brand?: Brand; code?: string; preset?: Partial<SpendyCard> }
   | { name: "expiring" }
-  | { name: "receipt" };
+  | { name: "receipt" }
+  | { name: "inbox" };
 
 function formatWhen(iso: string) {
   const d = new Date(iso);
