@@ -1083,6 +1083,8 @@ function SnapReceipt({
             </div>
           </div>
         )}
+      </div>
+
 
       <button
         disabled={!canSave}
