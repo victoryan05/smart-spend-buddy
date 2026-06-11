@@ -945,7 +945,6 @@ function SnapReceipt({
   const [preview, setPreview] = useState<string | null>(null);
   const [cardId, setCardId] = useState<string>(cards[0]?.id ?? "");
   const [parsed, setParsed] = useState<ParsedReceipt | null>(null);
-  const [amount, setAmount] = useState("");
   const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "saving" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -954,28 +953,27 @@ function SnapReceipt({
     setFile(f);
     setStatus("parsing");
     setError(null);
+    setParsed(null);
     const dataUrl = await fileToBase64(f);
     setPreview(dataUrl);
     const result = await parseReceipt(dataUrl);
-    if (!result) {
+    if (!result || result.total == null) {
+      setError("Couldn't read the total off this receipt. Try a clearer photo.");
       setStatus("error");
-      setError("Couldn't read this receipt. You can still set the amount manually.");
-      setStatus("ready");
       return;
     }
     setParsed(result);
-    if (result.total != null) setAmount(String(result.total));
     setStatus("ready");
   };
 
-  const effectiveAmount = +amount || parsed?.total || 0;
-  const canSave = !!cardId && !!file && effectiveAmount > 0 && status !== "saving" && status !== "parsing";
+  const effectiveAmount = parsed?.total ?? 0;
+  const canSave = !!cardId && !!file && effectiveAmount > 0 && status === "ready";
 
   const submit = async () => {
     if (!file || !cardId) return;
     setStatus("saving");
     try {
-      await onDone(cardId, file, parsed, +amount || undefined);
+      await onDone(cardId, file, parsed, undefined);
     } catch (e) {
       setStatus("error");
       setError(e instanceof Error ? e.message : "Couldn't save");
