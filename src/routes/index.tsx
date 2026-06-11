@@ -1118,7 +1118,197 @@ function FauxBarcode({ value }: { value: string }) {
   );
 }
 
+
+/* ---------- Inbox (forwarded emails) ---------- */
+function Inbox({
+  cards, onCancel, onAddCard, onAddTx,
+}: {
+  cards: SpendyCard[];
+  onCancel: () => void;
+  onAddCard: (preset: Partial<SpendyCard>) => void;
+  onAddTx: (cardId: string, parsed: ParsedReceipt) => Promise<void> | void;
+}) {
+  const address = useMemo(() => getForwardingAddress(), []);
+  const [copied, setCopied] = useState(false);
+  const [body, setBody] = useState("");
+  const [subject, setSubject] = useState("");
+  const [from, setFrom] = useState("");
+  const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "saving" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof parseEmail>>>(null);
+  const [cardId, setCardId] = useState<string>(cards[0]?.id ?? "");
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* */ }
+  };
+
+  const onEmlFile = async (f: File | undefined) => {
+    if (!f) return;
+    const text = await f.text();
+    setBody(text);
+  };
+
+  const process = async () => {
+    if (!body.trim()) return;
+    setStatus("parsing");
+    setError(null);
+    setResult(null);
+    const r = await parseEmail({ text: body, subject, from });
+    if (!r || r.kind === "unknown") {
+      setStatus("error");
+      setError("Couldn't tell if this is an e-gift card or a receipt. Try the original email body.");
+      return;
+    }
+    setResult(r);
+    setStatus("ready");
+  };
+
+  const saveGift = () => {
+    if (!result?.giftcard) return;
+    const g = result.giftcard;
+    onAddCard({
+      brand: g.brand,
+      balance: g.balance,
+      starting: g.balance,
+      currency: g.currency || "$",
+      code: [g.code, g.pin && `PIN ${g.pin}`].filter(Boolean).join(" · ") || "—",
+      kind: g.kind || "gift",
+      expiresAt: g.expires_at ?? new Date(Date.now() + 365 * 86400000).toISOString(),
+    });
+  };
+
+  const saveReceipt = async () => {
+    if (!result?.receipt || !cardId) return;
+    setStatus("saving");
+    try {
+      await onAddTx(cardId, result.receipt);
+    } catch (e) {
+      setStatus("error");
+      setError(e instanceof Error ? e.message : "Couldn't save");
+    }
+  };
+
+  return (
+    <div className="px-5 pb-8">
+      <div className="flex items-center justify-between">
+        <button onClick={onCancel} className="text-sm text-muted-foreground">← Back</button>
+        <p className="font-display text-xl">Inbox</p>
+        <span className="w-10" />
+      </div>
+
+      <div className="mt-4 rounded-2xl gradient-peach text-white p-4 shadow-soft">
+        <p className="text-[11px] uppercase tracking-wider opacity-80">Your Spendy forwarding address</p>
+        <p className="font-mono text-[15px] mt-1 break-all">{address}</p>
+        <p className="text-[12px] opacity-90 mt-2 leading-snug">
+          Forward any e-gift card or receipt email to this address and Spendy will add it for you automatically.
+        </p>
+        <button onClick={copy} className="mt-3 h-9 px-3 rounded-xl bg-white text-coral text-xs font-semibold">
+          {copied ? "Copied ✓" : "Copy address"}
+        </button>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Or paste an email here</p>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="From (optional)" className="bg-secondary rounded-xl px-3 h-10 text-sm outline-none" />
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject (optional)" className="bg-secondary rounded-xl px-3 h-10 text-sm outline-none" />
+        </div>
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Paste the full email body — Spendy will work out if it's a gift card or a receipt."
+          className="w-full min-h-[140px] bg-secondary rounded-xl p-3 text-sm outline-none resize-y"
+        />
+        <div className="flex gap-2 mt-2">
+          <label className="flex-1 h-10 rounded-xl bg-card border border-border text-xs grid place-items-center cursor-pointer">
+            Upload .eml file
+            <input type="file" accept=".eml,message/rfc822,text/plain,text/html" className="hidden" onChange={(e) => onEmlFile(e.target.files?.[0])} />
+          </label>
+          <button
+            onClick={process}
+            disabled={!body.trim() || status === "parsing"}
+            className="flex-1 h-10 rounded-xl gradient-peach text-white text-xs font-semibold disabled:opacity-40"
+          >
+            {status === "parsing" ? "Reading…" : "Process email"}
+          </button>
+        </div>
+        {error && <p className="text-[12px] text-destructive mt-2">{error}</p>}
+      </div>
+
+      {result?.kind === "giftcard" && result.giftcard && (
+        <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">E-gift card detected</p>
+          <p className="font-display text-xl mt-1">{result.giftcard.brand}</p>
+          <p className="text-sm text-muted-foreground">Balance · <span className="text-foreground font-semibold">{formatMoney(result.giftcard.balance, result.giftcard.currency || "$")}</span></p>
+          <p className="text-[12px] font-mono mt-1 break-all">{result.giftcard.code}{result.giftcard.pin ? ` · PIN ${result.giftcard.pin}` : ""}</p>
+          {result.giftcard.expires_at && (
+            <p className="text-[11px] text-muted-foreground mt-0.5">Expires {new Date(result.giftcard.expires_at).toLocaleDateString()}</p>
+          )}
+          <button onClick={saveGift} className="mt-3 w-full h-11 rounded-xl gradient-peach text-white text-sm font-semibold">
+            Add to wallet
+          </button>
+        </div>
+      )}
+
+      {result?.kind === "receipt" && result.receipt && (
+        <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Receipt detected</p>
+          <div className="flex items-baseline justify-between mt-1">
+            <p className="font-display text-lg truncate">{result.receipt.merchant ?? "Receipt"}</p>
+            <p className="font-display text-xl">{result.receipt.total != null ? formatMoney(result.receipt.total) : "—"}</p>
+          </div>
+          {result.receipt.purchased_at && (
+            <p className="text-[11px] text-muted-foreground">{new Date(result.receipt.purchased_at).toLocaleString()}</p>
+          )}
+          {result.receipt.items?.length > 0 && (
+            <ul className="mt-2 max-h-32 overflow-y-auto text-[12px]">
+              {result.receipt.items.slice(0, 8).map((it, i) => (
+                <li key={i} className="flex justify-between py-0.5">
+                  <span className="truncate pr-3">{it.name}</span>
+                  <span className="font-mono">{it.price != null ? formatMoney(it.price) : ""}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mt-3 mb-1">Paid with</p>
+          {cards.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Add a card first.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto">
+              {cards.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setCardId(c.id)}
+                  className={`flex items-center gap-3 p-2 rounded-xl border text-left transition ${cardId === c.id ? "border-coral bg-accent/30" : "border-border bg-card"}`}
+                >
+                  <div className="h-8 w-10 rounded-lg grid place-items-center text-sm" style={{ background: c.color }}><span>{c.emoji}</span></div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{c.brand}</p>
+                    <p className="text-[11px] text-muted-foreground">{formatMoney(c.balance, c.currency)} left</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={saveReceipt}
+            disabled={!cardId || !result.receipt.total || status === "saving"}
+            className="mt-3 w-full h-11 rounded-xl gradient-peach text-white text-sm font-semibold disabled:opacity-40"
+          >
+            {status === "saving" ? "Saving…" : "Save transaction"}
+          </button>
+        </div>
+      )}
+
+      <div className="mt-6 rounded-2xl border border-dashed border-border bg-card/40 p-3 text-[11px] text-muted-foreground leading-snug">
+        Powered by Mailgun Routes (placeholder). When wired up, emails sent to your forwarding address are received by a webhook, parsed with AI, and added to your wallet automatically.
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Brand picker ---------- */
+
 function PickBrand({
   onCancel, onPick, onManual,
 }: { onCancel: () => void; onPick: (b: Brand) => void; onManual: () => void }) {
