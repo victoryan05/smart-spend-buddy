@@ -108,6 +108,38 @@ export async function parseReceipt(imageBase64: string): Promise<ParsedReceipt |
   }
 }
 
+export interface ParsedEmail {
+  kind: "receipt" | "giftcard" | "unknown";
+  receipt: ParsedReceipt | null;
+  giftcard: {
+    brand: string;
+    balance: number;
+    currency: string;
+    code: string;
+    pin: string | null;
+    expires_at: string | null;
+    kind: "gift" | "credit" | "code";
+  } | null;
+}
+
+export async function parseEmail(input: { text?: string; html?: string; subject?: string; from?: string }): Promise<ParsedEmail | null> {
+  try {
+    const res = await fetch("/api/public/parse-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) {
+      console.error("parseEmail failed", res.status, await res.text());
+      return null;
+    }
+    return (await res.json()) as ParsedEmail;
+  } catch (e) {
+    console.error("parseEmail error", e);
+    return null;
+  }
+
+
 export async function insertTransaction(input: {
   cardId: string;
   brand: string;
