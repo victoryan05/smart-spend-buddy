@@ -643,17 +643,29 @@ function CatalogueTile({ c }: { c: typeof CATALOGUES[number] }) {
 
 /* ---------- More tab ---------- */
 function More({
-  locStatus, onEnableLocation, onSimulateCentre,
+  locStatus, onEnableLocation, onSimulateCentre, onInbox,
 }: {
   locStatus: "off" | "watching" | "denied";
   onEnableLocation: () => void;
   onSimulateCentre: () => void;
+  onInbox: () => void;
 }) {
   const statusLabel = locStatus === "watching" ? "On" : locStatus === "denied" ? "Blocked" : "Off";
+  const address = useMemo(() => getForwardingAddress(), []);
   return (
     <div className="px-5">
       <h1 className="font-display text-3xl">More</h1>
-      <div className="mt-5 rounded-2xl bg-card border border-border p-4 shadow-soft">
+
+      <button
+        onClick={onInbox}
+        className="mt-5 w-full text-left rounded-2xl gradient-peach text-white p-4 shadow-soft active:scale-[.99] transition"
+      >
+        <p className="text-[11px] uppercase tracking-wider opacity-80">Spendy inbox</p>
+        <p className="font-mono text-[13px] mt-1 break-all">{address}</p>
+        <p className="text-[11px] opacity-90 mt-2">Forward e-gift cards and email receipts here →</p>
+      </button>
+
+      <div className="mt-4 rounded-2xl bg-card border border-border p-4 shadow-soft">
         <div className="flex items-start gap-3">
           <span className="text-xl">📍</span>
           <div className="flex-1">
