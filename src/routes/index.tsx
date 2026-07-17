@@ -563,7 +563,7 @@ function Wallet({
           onClick={onAdd}
           className="h-9 px-3 rounded-full bg-card border border-border text-xs font-semibold flex items-center gap-1"
         >
-          <Plus /> Add
+          <Plus /> Add gift card
         </button>
       </div>
       <p className="text-sm text-muted-foreground mt-1">
