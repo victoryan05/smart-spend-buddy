@@ -408,7 +408,7 @@ function Home({
           onClick={onAdd}
           className="h-9 px-3 rounded-full bg-card border border-border text-xs font-semibold flex items-center gap-1 active:scale-95 transition"
         >
-          <Plus /> Add
+          <Plus /> Add gift card
         </button>
       </div>
 
