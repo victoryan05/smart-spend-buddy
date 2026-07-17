@@ -415,7 +415,7 @@ function Home({
       <section className="mt-6 rounded-3xl gradient-peach text-white p-6 shadow-soft relative overflow-hidden">
         <div className="absolute -right-6 -top-6 h-32 w-32 rounded-full bg-white/15 blur-xl" />
         <p className="text-sm/none opacity-90">Hi, Mia — you have</p>
-        <p className="font-display text-[3.2rem] leading-none mt-2">{formatMoney(total)}</p>
+        <p className="text-[3rem] font-extrabold tracking-tight leading-none mt-2">{formatMoney(total)}</p>
         <p className="text-sm opacity-90 mt-2">
           across {cards.length} card{cards.length === 1 ? "" : "s"} & codes
         </p>
