@@ -332,7 +332,7 @@ function BottomNav({
   if (hidden) return null;
   const items: { tab: Tab; label: string; icon: React.ReactNode }[] = [
     { tab: "home", label: "Home", icon: <IconHome /> },
-    { tab: "catalogues", label: "Catalogues", icon: <IconBook /> },
+    { tab: "catalogues", label: "Offers", icon: <IconBook /> },
     { tab: "wallet", label: "Wallet", icon: <IconWallet /> },
     { tab: "more", label: "More", icon: <IconUser /> },
   ];
@@ -415,7 +415,7 @@ function Home({
       <section className="mt-6 rounded-3xl gradient-peach text-white p-6 shadow-soft relative overflow-hidden">
         <div className="absolute -right-6 -top-6 h-32 w-32 rounded-full bg-white/15 blur-xl" />
         <p className="text-sm/none opacity-90">Hi, Mia — you have</p>
-        <p className="font-display text-[3.2rem] leading-none mt-2">{formatMoney(total)}</p>
+        <p className="text-[3rem] font-extrabold tracking-tight leading-none mt-2">{formatMoney(total)}</p>
         <p className="text-sm opacity-90 mt-2">
           across {cards.length} card{cards.length === 1 ? "" : "s"} & codes
         </p>
@@ -514,7 +514,7 @@ function Home({
 
       <section className="mt-6">
         <div className="flex items-baseline justify-between mb-3">
-          <h2 className="font-display text-2xl">Offers</h2>
+          <h2 className="text-2xl font-extrabold tracking-tight">Offers</h2>
           <button onClick={onCatalogues} className="text-xs text-coral font-semibold">See all →</button>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -524,7 +524,7 @@ function Home({
 
       <section className="mt-6">
         <div className="flex items-baseline justify-between mb-3">
-          <h2 className="font-display text-2xl">Your cards</h2>
+          <h2 className="text-2xl font-extrabold tracking-tight">Your cards</h2>
           <span className="text-xs text-muted-foreground">{cards.length} total</span>
         </div>
         {cards.length === 0 ? (
@@ -609,7 +609,7 @@ function Wallet({
 function Catalogues() {
   return (
     <div className="px-5">
-      <h1 className="font-display text-3xl">Catalogues</h1>
+      <h1 className="font-display text-3xl">Offers</h1>
       <p className="text-sm text-muted-foreground mt-1">Weekly offers from our partner brands.</p>
       <div className="mt-5 rounded-2xl border border-dashed border-border bg-card/50 p-4 text-[12px] text-muted-foreground">
         Spot reserved for partner corporates — brands can publish promotions, catalogues and
