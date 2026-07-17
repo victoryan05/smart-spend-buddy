@@ -609,7 +609,7 @@ function Wallet({
 function Catalogues() {
   return (
     <div className="px-5">
-      <h1 className="font-display text-3xl">Catalogues</h1>
+      <h1 className="font-display text-3xl">Offers</h1>
       <p className="text-sm text-muted-foreground mt-1">Weekly offers from our partner brands.</p>
       <div className="mt-5 rounded-2xl border border-dashed border-border bg-card/50 p-4 text-[12px] text-muted-foreground">
         Spot reserved for partner corporates — brands can publish promotions, catalogues and
