@@ -524,7 +524,7 @@ function Home({
 
       <section className="mt-6">
         <div className="flex items-baseline justify-between mb-3">
-          <h2 className="font-display text-2xl">Your cards</h2>
+          <h2 className="text-2xl font-extrabold tracking-tight">Your cards</h2>
           <span className="text-xs text-muted-foreground">{cards.length} total</span>
         </div>
         {cards.length === 0 ? (
