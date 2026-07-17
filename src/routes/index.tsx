@@ -1782,7 +1782,7 @@ function Expiring({
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="rounded-2xl border border-dashed border-border p-6 text-center">
-      <p className="font-display text-xl">Nothing here yet</p>
+      <p className="text-xl font-extrabold tracking-tight">Nothing here yet</p>
       <p className="text-sm text-muted-foreground mt-1">Add your first gift card or code — takes under a minute.</p>
       <button onClick={onAdd} className="mt-4 h-10 px-5 rounded-xl gradient-peach text-white text-sm font-semibold shadow-soft">
         Add a card
