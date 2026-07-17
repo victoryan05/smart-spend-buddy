@@ -332,7 +332,7 @@ function BottomNav({
   if (hidden) return null;
   const items: { tab: Tab; label: string; icon: React.ReactNode }[] = [
     { tab: "home", label: "Home", icon: <IconHome /> },
-    { tab: "catalogues", label: "Catalogues", icon: <IconBook /> },
+    { tab: "catalogues", label: "Offers", icon: <IconBook /> },
     { tab: "wallet", label: "Wallet", icon: <IconWallet /> },
     { tab: "more", label: "More", icon: <IconUser /> },
   ];
