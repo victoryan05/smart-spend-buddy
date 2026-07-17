@@ -514,7 +514,7 @@ function Home({
 
       <section className="mt-6">
         <div className="flex items-baseline justify-between mb-3">
-          <h2 className="font-display text-2xl">Offers</h2>
+          <h2 className="text-2xl font-extrabold tracking-tight">Offers</h2>
           <button onClick={onCatalogues} className="text-xs text-coral font-semibold">See all →</button>
         </div>
         <div className="grid grid-cols-2 gap-3">
