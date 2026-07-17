@@ -531,7 +531,7 @@ function Home({
           <EmptyState onAdd={onAdd} />
         ) : (
           <ul className="space-y-3">
-            {cards.slice(0, 4).map((c) => (
+            {[...cards].sort((a, b) => a.brand.localeCompare(b.brand)).slice(0, 4).map((c) => (
               <li key={c.id}><CardRow card={c} onClick={() => onOpen(c.id)} /></li>
             ))}
           </ul>
