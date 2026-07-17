@@ -587,7 +587,7 @@ function Wallet({
           <div className="mt-6"><EmptyState onAdd={onAdd} /></div>
         ) : (
           <ul className="mt-5 space-y-3">
-            {cards.map((c) => (
+            {[...cards].sort((a, b) => a.brand.localeCompare(b.brand)).map((c) => (
               <li key={c.id}><CardRow card={c} onClick={() => onOpen(c.id)} /></li>
             ))}
           </ul>
